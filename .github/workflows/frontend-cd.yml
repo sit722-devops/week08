@@ -19,8 +19,8 @@ on:
         description: 'Resource Group of the AKS Cluster'
         required: true
         default: '<resource_group_name>'
-      aks_acr_name:   # 👈 Added input for registry short name
-        description: 'Name of Azure Container Registry (no .azurecr.io)'
+      aks_acr_name:
+        description: 'Name of Azure Container Registry (short name, no .azurecr.io)'
         required: true
         default: 'sit722acrvincent'
 
@@ -56,23 +56,35 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ✅ Fixed ACR login
+      # ✅ Fixed ACR login using input
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ inputs.aks_acr_name }}
 
+      # ✅ Corrected path + validation
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
+          echo "Injecting IPs into frontend/main.js"
+          if ! grep -q "_PRODUCT_API_URL_" frontend/main.js; then
+            echo "❌ ERROR: _PRODUCT_API_URL_ placeholder not found in frontend/main.js"
+            exit 1
+          fi
+          if ! grep -q "_ORDER_API_URL_" frontend/main.js; then
+            echo "❌ ERROR: _ORDER_API_URL_ placeholder not found in frontend/main.js"
+            exit 1
+          fi
+
           sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
+
           echo "--- Modified main.js content ---"
           cat frontend/main.js
           echo "---------------------------------"
 
       - name: Build and Push Frontend Image
         run: |
-          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
-          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
+          IMAGE_NAME=${{ inputs.aks_acr_name }}.azurecr.io/frontend:latest
+          docker build -t $IMAGE_NAME ./frontend/
+          docker push $IMAGE_NAME
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
