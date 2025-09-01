@@ -16,14 +16,13 @@ on:
       - 'backend/**'
       - '.github/workflows/backend_ci.yml' # Trigger if this workflow file changes
 
-# Define global environment variables that can be used across jobs
 env:
-  # Full login server (e.g., myregistry.azurecr.io)
-  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-  # Registry name only (e.g., myregistry)
-  AZURE_CONTAINER_REGISTRY: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-  # Unique image tag for traceability
+  # Full login server (needed for docker push)
+  ACR_LOGIN_SERVER: sit722wk08acr123.azurecr.io
+  # Short name (needed for az acr login)
+  AZURE_CONTAINER_REGISTRY: sit722wk08acr123
   IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+
 
 jobs:
   # Job 1: Run tests and linting for all backend services
