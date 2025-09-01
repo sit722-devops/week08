@@ -118,7 +118,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Azure login using a Service Principal secret
+    # Azure login using a Service Principal secret, change
     - name: Azure Login
       uses: azure/login@v1
       with:
