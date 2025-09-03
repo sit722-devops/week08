@@ -34,6 +34,22 @@ jobs:
         fetch-depth: 0
 
     # Azure login using a Service Principal secret
+    - name: Ensure repo is at latest remote tip for the branch
+      # This guarantees all folders/files are updated to the latest commit on the branch (origin/<branch>)
+      run: |
+        # Determine branch name from GITHUB_REF; fallback to main if not a branch ref
+        BRANCH="${GITHUB_REF#refs/heads/}"
+        if [ "$BRANCH" = "$GITHUB_REF" ] || [ -z "$BRANCH" ]; then
+          BRANCH="main"
+        fi
+        echo "Ensuring workspace matches origin/${BRANCH}"
+        # Make sure origin/HEAD exists and fetch latest
+        git remote set-head origin --auto || true
+        git fetch --prune origin "${BRANCH}"
+        git reset --hard "origin/${BRANCH}"
+        # Remove any untracked files (safe for CI runner)
+        git clean -fdx
+        
     - name: Azure Login
       uses: azure/login@v1
       with:
