@@ -58,17 +58,17 @@ jobs:
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
-      - name: Inject Backend IPs into Frontend main.js
-        run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
-          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
+      # - name: Inject Backend IPs into Frontend main.js
+      #   run: |
+      #     echo "Injecting IPs into frontend/static/js/main.js"
+      #     # Ensure frontend/main.js is directly in the path for sed
+      #     sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
+      #     sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
           
-          # Display the modified file content for debugging
-          echo "--- Modified main.js content ---"
-          cat frontend/main.js
-          echo "---------------------------------"
+      #     # Display the modified file content for debugging
+      #     echo "--- Modified main.js content ---"
+      #     cat frontend/main.js
+      #     echo "---------------------------------"
 
       # Build and Push Docker image for Frontend
       - name: Build and Push Frontend Image
