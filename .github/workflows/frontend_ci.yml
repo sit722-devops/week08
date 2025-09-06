@@ -1,5 +1,7 @@
 # week08/.github/workflows/frontend_ci.yml
 
+# Trigger Frontend CI workflow with a push
+
 name: Frontend CI - Build & Push Image
 
 on:

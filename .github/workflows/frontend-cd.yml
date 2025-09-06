@@ -10,11 +10,11 @@ on:
       product_api_ip:
         description: "External IP of Product Service"
         required: true
-        default: "http://<ip_address>:8000"
+        default: "http://4.198.132.49:8000"
       order_api_ip:
         description: "External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)"
         required: true
-        default: "http://<ip_address>:8001"
+        default: "http://20.213.214.153:8001"
       aks_cluster_name:
         description: "Name of the AKS Cluster to deploy to"
         required: true
