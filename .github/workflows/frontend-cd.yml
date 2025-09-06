@@ -8,21 +8,21 @@ on:
   workflow_dispatch:
     inputs:
       product_api_ip:
-        description: 'External IP of Product Service'
+        description: "External IP of Product Service"
         required: true
-        default: 'http://<ip_address>:8000'
+        default: "http://<ip_address>:8000"
       order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
+        description: "External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)"
         required: true
-        default: 'http://<ip_address>:8001'
+        default: "http://<ip_address>:8001"
       aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
+        description: "Name of the AKS Cluster to deploy to"
         required: true
-        default: '<aks_name>'
+        default: "ashleywdsit722aks"
       aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
+        description: "Resource Group of the AKS Cluster"
         required: true
-        default: '<<resource_group_name>'
+        default: "deakinuni"
 
   workflow_call:
     inputs:
@@ -64,7 +64,7 @@ jobs:
           # Ensure frontend/main.js is directly in the path for sed
           sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
-          
+
           # Display the modified file content for debugging
           echo "--- Modified main.js content ---"
           cat frontend/main.js
