@@ -1,5 +1,17 @@
-# week08/k8s/product-db.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: product-db-pvc-w08e1
+  labels:
+    app: product-db
+spec:
+  accessModes: [ ReadWriteOnce ]
+  resources:
+    requests:
+      storage: 8Gi
+  # storageClassName: ""  # remove/comment to use cluster default StorageClass
 
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,39 +28,74 @@ spec:
       labels:
         app: product-db
     spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: postgres
-        image: postgres:15-alpine # Use the same PostgreSQL image as in Docker Compose
+        image: postgres:15-alpine
+        imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 5432 # Default PostgreSQL port
+        - containerPort: 5432
         env:
         - name: POSTGRES_DB
           valueFrom:
             configMapKeyRef:
-              name: ecomm-config-w08e1 # ConfigMap name matches
+              name: ecomm-config-w08e1
               key: PRODUCTS_DB_NAME
         - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: POSTGRES_USER
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: POSTGRES_PASSWORD
+        readinessProbe:
+          exec:
+            command: ["sh","-c","pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 6
+        livenessProbe:
+          exec:
+            command: ["sh","-c","pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"]
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        volumeMounts:
+        - name: product-db-data
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: product-db-data
+        persistentVolumeClaim:
+          claimName: product-db-pvc-w08e1
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: product-db-service-w08e1 # Internal DNS name for the Product DB
+  name: product-db-service-w08e1
   labels:
     app: product-db
 spec:
   selector:
-    app: product-db # Selects pods with the label app: product-db
+    app: product-db
   ports:
-    - protocol: TCP
-      port: 5432 # The port the service listens on (default PostgreSQL)
-      targetPort: 5432 # The port on the Pod (containerPort)
-  type: ClusterIP # Only accessible from within the cluster
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+  type: ClusterIP
