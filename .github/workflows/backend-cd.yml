@@ -42,13 +42,6 @@ jobs:
             --name ${{ github.event.inputs.aks_cluster_name }} \
             --overwrite-existing
 
-      # We already granted AcrPull; just log the assignment for record-keeping
-      - name: Verify AcrPull role exists (non-blocking)
-        run: |
-          ACR_ID=$(az acr show -n ${{ github.event.inputs.aks_acr_name }} --query id -o tsv)
-          PRINCIPAL_ID=$(az aks show -g ${{ github.event.inputs.aks_resource_group }} -n ${{ github.event.inputs.aks_cluster_name }} --query identityProfile.kubeletidentity.objectId -o tsv)
-          az role assignment list --assignee-object-id "$PRINCIPAL_ID" --scope "$ACR_ID" -o table || true
-
       - name: Ensure namespace exists and set as current
         run: |
           kubectl create namespace shop --dry-run=client -o yaml | kubectl apply -f -
@@ -56,7 +49,6 @@ jobs:
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
-          echo "Deploying backend infrastructure into namespace 'shop'..."
           kubectl apply -n shop -f k8s/configmaps.yaml
           kubectl apply -n shop -f k8s/secrets.yaml
           kubectl apply -n shop -f k8s/product-db.yaml
@@ -64,72 +56,50 @@ jobs:
 
       - name: Deploy Backend Microservices (Product, Order)
         run: |
-          echo "Deploying backend microservices into namespace 'shop'..."
           kubectl apply -n shop -f k8s/product-service.yaml
           kubectl apply -n shop -f k8s/order-service.yaml
-          echo "Listing resources in 'shop' for visibility:"
           kubectl get all -n shop
 
-      - name: Detect service names (handles -w08e1 suffix or custom names)
-        id: detect_names
+      # ✅ Hardcode the correct LB service names you actually have
+      - name: Set service names explicitly
         run: |
-          # Find the first service whose name contains "product" and "order"
-          PROD_SVC=$(kubectl get svc -n shop -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -m1 -E 'product')
-          ORDER_SVC=$(kubectl get svc -n shop -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -m1 -E 'order')
+          echo "PROD_SVC=product-service-w08e1"  >> $GITHUB_ENV
+          echo "ORDER_SVC=order-service-w08e1"   >> $GITHUB_ENV
 
-          if [ -z "$PROD_SVC" ] || [ -z "$ORDER_SVC" ]; then
-            echo "Could not detect service names. Current services:"
-            kubectl get svc -n shop
-            exit 1
-          fi
-
-          echo "Detected Product service: $PROD_SVC"
-          echo "Detected Order service:   $ORDER_SVC"
-          echo "PROD_SVC=$PROD_SVC" >> $GITHUB_ENV
-          echo "ORDER_SVC=$ORDER_SVC" >> $GITHUB_ENV
-
-      - name: Wait for Backend LoadBalancer IPs (robust)
+      # Short, robust fetch: accept ip or hostname; loop briefly just in case
+      - name: Fetch Backend LoadBalancer endpoints
         run: |
-          echo "Waiting for LoadBalancer endpoints (up to 12 minutes)..."
+          get_lb () {
+            local svc="$1"
+            local v
+            v=$(kubectl get svc "$svc" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -z "$v" ]; then
+              v=$(kubectl get svc "$svc" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            fi
+            echo "$v"
+          }
+
           PRODUCT_IP=""
           ORDER_IP=""
 
-          # Helper to read IP or hostname
-          get_lb_endpoint () {
-            local svc="$1"
-            local val
-            val=$(kubectl get svc "$svc" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            if [ -z "$val" ]; then
-              val=$(kubectl get svc "$svc" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-            fi
-            echo "$val"
-          }
-
-          # Poll up to 140 times * 5s = ~11m40s
-          for i in $(seq 1 140); do
-            echo "Attempt $i/140 ..."
-            PRODUCT_IP=$(get_lb_endpoint "$PROD_SVC")
-            ORDER_IP=$(get_lb_endpoint "$ORDER_SVC")
-            printf "  %s => '%s'\n" "$PROD_SVC"  "${PRODUCT_IP:-<pending>}"
-            printf "  %s => '%s'\n" "$ORDER_SVC" "${ORDER_IP:-<pending>}"
-            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
-              echo "LoadBalancer endpoints are ready."
-              break
-            fi
+          for i in $(seq 1 30); do  # ~2.5 minutes max; your IPs already exist
+            PRODUCT_IP=$(get_lb "$PROD_SVC")
+            ORDER_IP=$(get_lb "$ORDER_SVC")
+            echo "Attempt $i: $PROD_SVC => ${PRODUCT_IP:-<pending>}, $ORDER_SVC => ${ORDER_IP:-<pending>}"
+            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then break; fi
             sleep 5
           done
 
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
-            echo "Error: One or more LoadBalancer endpoints not ready after timeout."
-            echo "Current services in 'shop':"
+            echo "Services didn't report LB endpoints fast enough:"
             kubectl get svc -n shop -o wide || true
             exit 1
           fi
 
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
-          echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
-          echo "Resolved Product endpoint: $PRODUCT_IP"
-          echo "Resolved Order endpoint:   $ORDER_IP"
+          echo "ORDER_IP=$ORDER_IP"   >> $GITHUB_ENV
+          echo "Product endpoint: $PRODUCT_IP"
+          echo "Order endpoint:   $ORDER_IP"
 
       - name: Capture Product Service IP for Workflow Output
         id: get_product_ip
