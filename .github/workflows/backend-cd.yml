@@ -42,49 +42,68 @@ jobs:
             --name ${{ github.event.inputs.aks_cluster_name }} \
             --overwrite-existing
 
-      # We already granted AcrPull to the kubelet identity; skip attach-acr to avoid RBAC errors
+      # We already granted AcrPull; just log the assignment for record-keeping
       - name: Verify AcrPull role exists (non-blocking)
         run: |
           ACR_ID=$(az acr show -n ${{ github.event.inputs.aks_acr_name }} --query id -o tsv)
           PRINCIPAL_ID=$(az aks show -g ${{ github.event.inputs.aks_resource_group }} -n ${{ github.event.inputs.aks_cluster_name }} --query identityProfile.kubeletidentity.objectId -o tsv)
-          echo "Listing role assignments for kubelet identity on ACR scope (for your records):"
           az role assignment list --assignee-object-id "$PRINCIPAL_ID" --scope "$ACR_ID" -o table || true
 
-      - name: Ensure namespace exists
+      - name: Ensure namespace exists and set as current
         run: |
           kubectl create namespace shop --dry-run=client -o yaml | kubectl apply -f -
+          # Make 'shop' the default namespace for all following kubectl commands
+          kubectl config set-context --current --namespace=shop
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
-          echo "Deploying backend infrastructure..."
-          cd k8s/
-          kubectl apply -f configmaps.yaml
-          kubectl apply -f secrets.yaml
-          kubectl apply -f product-db.yaml
-          kubectl apply -f order-db.yaml
+          echo "Deploying backend infrastructure into namespace 'shop'..."
+          kubectl apply -n shop -f k8s/configmaps.yaml
+          kubectl apply -n shop -f k8s/secrets.yaml
+          kubectl apply -n shop -f k8s/product-db.yaml
+          kubectl apply -n shop -f k8s/order-db.yaml
 
       - name: Deploy Backend Microservices (Product, Order)
         run: |
-          echo "Deploying backend microservices..."
-          cd k8s/
-          kubectl apply -f product-service.yaml
-          kubectl apply -f order-service.yaml
+          echo "Deploying backend microservices into namespace 'shop'..."
+          kubectl apply -n shop -f k8s/product-service.yaml
+          kubectl apply -n shop -f k8s/order-service.yaml
+          echo "Listing resources in 'shop' for visibility:"
+          kubectl get all -n shop
+
+      - name: Detect service names (handles -w08e1 suffix or custom names)
+        id: detect_names
+        run: |
+          # Find the first service whose name contains "product" and "order"
+          PROD_SVC=$(kubectl get svc -n shop -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -m1 -E 'product')
+          ORDER_SVC=$(kubectl get svc -n shop -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -m1 -E 'order')
+
+          if [ -z "$PROD_SVC" ] || [ -z "$ORDER_SVC" ]; then
+            echo "Could not detect service names. Current services:"
+            kubectl get svc -n shop
+            exit 1
+          fi
+
+          echo "Detected Product service: $PROD_SVC"
+          echo "Detected Order service:   $ORDER_SVC"
+          echo "PROD_SVC=$PROD_SVC" >> $GITHUB_ENV
+          echo "ORDER_SVC=$ORDER_SVC" >> $GITHUB_ENV
 
       - name: Wait for Backend LoadBalancer IPs
         run: |
-          echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
+          echo "Waiting for LoadBalancer IPs to be assigned (up to 5 minutes)..."
           PRODUCT_IP=""
           ORDER_IP=""
 
           for i in $(seq 1 60); do
             echo "Attempt $i/60 to get IPs..."
-            PRODUCT_IP=$(kubectl get service product-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || true)
-            ORDER_IP=$(kubectl get service order-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || true)
+            PRODUCT_IP=$(kubectl get service "$PROD_SVC" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            ORDER_IP=$(kubectl get service "$ORDER_SVC" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
 
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
               echo "All backend LoadBalancer IPs assigned!"
-              echo "Product Service IP: $PRODUCT_IP"
-              echo "Order Service IP: $ORDER_IP"
+              echo "Product Service ($PROD_SVC) IP: $PRODUCT_IP"
+              echo "Order Service   ($ORDER_SVC) IP: $ORDER_IP"
               break
             fi
             sleep 5
@@ -92,6 +111,8 @@ jobs:
 
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
             echo "Error: One or more LoadBalancer IPs not assigned after timeout."
+            echo "Current services in 'shop':"
+            kubectl get svc -n shop -o wide || true
             exit 1
           fi
 
