@@ -1,9 +1,7 @@
-# week08/k8s/order-service.yaml
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: order-service-w08e1 # Deployment name matches
+  name: order-service-w08e1
   labels:
     app: order-service
 spec:
@@ -16,15 +14,21 @@ spec:
       labels:
         app: order-service
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: order-service-container
-        image: durgeshsamariya.azurecr.io/order_service:latest
+        image: IMAGE_ORDER_PLACEHOLDER            # <— CD will replace this
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
         env:
         - name: POSTGRES_HOST
           value: order-db-service-w08e1
+        - name: POSTGRES_PORT
+          value: "5432"
         - name: POSTGRES_DB
           valueFrom:
             configMapKeyRef:
@@ -45,6 +49,29 @@ spec:
             configMapKeyRef:
               name: ecomm-config-w08e1
               key: PRODUCT_SERVICE_URL
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 6
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
 ---
 apiVersion: v1
 kind: Service
@@ -57,6 +84,6 @@ spec:
     app: order-service
   ports:
     - protocol: TCP
-      port: 8001
-      targetPort: 8000
-  type: LoadBalancer
+      port: 8001          # external/cluster port
+      targetPort: 8000    # container port
+  type: LoadBalancer       # keep as per your assignment requirement
