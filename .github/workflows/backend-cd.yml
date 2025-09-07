@@ -52,7 +52,6 @@ jobs:
       - name: Ensure namespace exists and set as current
         run: |
           kubectl create namespace shop --dry-run=client -o yaml | kubectl apply -f -
-          # Make 'shop' the default namespace for all following kubectl commands
           kubectl config set-context --current --namespace=shop
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
@@ -89,28 +88,39 @@ jobs:
           echo "PROD_SVC=$PROD_SVC" >> $GITHUB_ENV
           echo "ORDER_SVC=$ORDER_SVC" >> $GITHUB_ENV
 
-      - name: Wait for Backend LoadBalancer IPs
+      - name: Wait for Backend LoadBalancer IPs (robust)
         run: |
-          echo "Waiting for LoadBalancer IPs to be assigned (up to 5 minutes)..."
+          echo "Waiting for LoadBalancer endpoints (up to 12 minutes)..."
           PRODUCT_IP=""
           ORDER_IP=""
 
-          for i in $(seq 1 60); do
-            echo "Attempt $i/60 to get IPs..."
-            PRODUCT_IP=$(kubectl get service "$PROD_SVC" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            ORDER_IP=$(kubectl get service "$ORDER_SVC" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+          # Helper to read IP or hostname
+          get_lb_endpoint () {
+            local svc="$1"
+            local val
+            val=$(kubectl get svc "$svc" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -z "$val" ]; then
+              val=$(kubectl get svc "$svc" -n shop -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            fi
+            echo "$val"
+          }
 
+          # Poll up to 140 times * 5s = ~11m40s
+          for i in $(seq 1 140); do
+            echo "Attempt $i/140 ..."
+            PRODUCT_IP=$(get_lb_endpoint "$PROD_SVC")
+            ORDER_IP=$(get_lb_endpoint "$ORDER_SVC")
+            printf "  %s => '%s'\n" "$PROD_SVC"  "${PRODUCT_IP:-<pending>}"
+            printf "  %s => '%s'\n" "$ORDER_SVC" "${ORDER_IP:-<pending>}"
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
-              echo "All backend LoadBalancer IPs assigned!"
-              echo "Product Service ($PROD_SVC) IP: $PRODUCT_IP"
-              echo "Order Service   ($ORDER_SVC) IP: $ORDER_IP"
+              echo "LoadBalancer endpoints are ready."
               break
             fi
             sleep 5
           done
 
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
-            echo "Error: One or more LoadBalancer IPs not assigned after timeout."
+            echo "Error: One or more LoadBalancer endpoints not ready after timeout."
             echo "Current services in 'shop':"
             kubectl get svc -n shop -o wide || true
             exit 1
@@ -118,6 +128,8 @@ jobs:
 
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
           echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
+          echo "Resolved Product endpoint: $PRODUCT_IP"
+          echo "Resolved Order endpoint:   $ORDER_IP"
 
       - name: Capture Product Service IP for Workflow Output
         id: get_product_ip
