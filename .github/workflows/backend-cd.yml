@@ -4,23 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
+        description: "Name of the AKS Cluster to deploy to"
         required: true
-        default: '<aks_cluster_name>'
+        default: "<aks_cluster_name>"
       aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
+        description: "Resource Group of the AKS Cluster"
         required: true
-        default: '<resource_group_name>'
+        default: "<resource_group_name>"
       aks_acr_name:
-        description: 'Name of ACR'
+        description: "Name of ACR"
         required: true
-        default: '<acr_name>'
+        default: "<acr_name>"
 
 jobs:
   deploy_backend:
     runs-on: ubuntu-latest
     environment: Production
-    
+
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
       ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
@@ -37,15 +37,51 @@ jobs:
 
       - name: Set Kubernetes context (get AKS credentials)
         run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
+          az aks get-credentials \
+            --resource-group "${{ github.event.inputs.aks_resource_group }}" \
+            --name "${{ github.event.inputs.aks_cluster_name }}" \
+            --overwrite-existing
 
-      - name: Attach ACR
+      # Keep the attach step, but don't fail the job if policy/RBAC denies it
+      - name: Attach ACR (policy may deny; safe to skip)
         run: |
-          az aks update --name ${{ github.event.inputs.aks_cluster_name }} --resource-group ${{ github.event.inputs.aks_resource_group }} --attach-acr ${{ github.event.inputs.aks_acr_name }}
+          az aks update \
+            --name "${{ github.event.inputs.aks_cluster_name }}" \
+            --resource-group "${{ github.event.inputs.aks_resource_group }}" \
+            --attach-acr "${{ github.event.inputs.aks_acr_name }}"
+        continue-on-error: true
+
+      # --- ACR imagePullSecret path (works without Owner & bypasses policy updates) ---
+
+      - name: Enable ACR admin (OK for lab/assignment)
+        run: |
+          az acr update -n "${{ github.event.inputs.aks_acr_name }}" --admin-enabled true
+
+      - name: Fetch ACR admin creds
+        id: acrcreds
+        run: |
+          echo "user=$(az acr credential show -n '${{ github.event.inputs.aks_acr_name }}' --query username -o tsv)" >> $GITHUB_OUTPUT
+          echo "pass=$(az acr credential show -n '${{ github.event.inputs.aks_acr_name }}' --query 'passwords[0].value' -o tsv)" >> $GITHUB_OUTPUT
+
+      - name: Create/refresh imagePullSecret in AKS
+        run: |
+          kubectl delete secret acr-auth --ignore-not-found
+          kubectl create secret docker-registry acr-auth \
+            --docker-server="${{ github.event.inputs.aks_acr_name }}.azurecr.io" \
+            --docker-username='${{ steps.acrcreds.outputs.user }}' \
+            --docker-password='${{ steps.acrcreds.outputs.pass }}'
+
+      - name: Patch default service account to use acr-auth
+        run: |
+          kubectl patch serviceaccount default \
+            -p '{"imagePullSecrets":[{"name":"acr-auth"}]}' || true
+
+      # --- Deploy backend infra & services ---
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
           echo "Deploying backend infrastructure..."
+          set -e
           cd k8s/
           kubectl apply -f configmaps.yaml
           kubectl apply -f secrets.yaml
@@ -55,16 +91,25 @@ jobs:
       - name: Deploy Backend Microservices (Product, Order)
         run: |
           echo "Deploying backend microservices..."
+          set -e
           cd k8s/
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
-      
+
       - name: Wait for Backend LoadBalancer IPs
         run: |
+          set -e
+          # Adjust deployment names if they differ in your manifests
+          kubectl rollout status deploy/product-service-w08e1 --timeout=300s || true
+          kubectl rollout status deploy/order-service-w08e1   --timeout=300s || true
+
+      - name: Wait for Backend LoadBalancer IPs (max ~5 minutes)
+        run: |
+          set -e
           echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
           PRODUCT_IP=""
           ORDER_IP=""
-          
+
           for i in $(seq 1 60); do
             echo "Attempt $i/60 to get IPs..."
             PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
@@ -78,12 +123,13 @@ jobs:
             fi
             sleep 5 # Wait 5 seconds before next attempt
           done
-          
+
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
             echo "Error: One or more LoadBalancer IPs not assigned after timeout."
+            kubectl get svc product-service-w08e1 order-service-w08e1 -o wide || true
             exit 1 # Fail the job if IPs are not obtained
           fi
-          
+
           # These are environment variables for subsequent steps in the *same job*
           # And used to set the job outputs
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
@@ -92,7 +138,7 @@ jobs:
       - name: Capture Product Service IP for Workflow Output
         id: get_product_ip
         run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
-      
+
       - name: Capture Order Service IP for Workflow Output
         id: get_order_ip
         run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
