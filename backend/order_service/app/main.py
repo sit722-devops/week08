@@ -277,7 +277,7 @@ def list_orders(
 ):
 
     logger.info(
-        f"Order Service: Listing order (skip={skip}, limit={limit}, user_id={user_id}, status='{status}')"
+        f"Order Service: Listing orders (skip={skip}, limit={limit}, user_id={user_id}, status='{status}')"
     )
     query = db.query(Order)
 
