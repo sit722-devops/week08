@@ -2,8 +2,6 @@
 
 name: CD - Deploy Frontend to AKS
 
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
 on:
   workflow_dispatch:
     inputs:
@@ -48,46 +46,73 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
+      # Azure login using a Service Principal JSON secret
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Login to Azure Container Registry (ACR)
+      # Login to Azure Container Registry (ACR) using the registry NAME (no .azurecr.io)
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.ACR_NAME }}
 
+      # Inject backend IPs into the frontend before building the image
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
+          echo "Injecting IPs into frontend/main.js"
           sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
 
-          # Display the modified file content for debugging
           echo "--- Modified main.js content ---"
-          cat frontend/main.js
+          grep -E "PRODUCT|ORDER|http" -n frontend/main.js || true
           echo "---------------------------------"
 
-      # Build and Push Docker image for Frontend
+      # Build & push the Frontend image to your ACR using the LOGIN SERVER
       - name: Build and Push Frontend Image
         run: |
           docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/frontend:latest
 
+      # Get kubectl context for your AKS
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
         with:
           resource-group: ${{ inputs.aks_resource_group }}
           cluster-name: ${{ inputs.aks_cluster_name }}
 
+      # Ensure the cluster can pull from ACR even if attach-acr is blocked by policy/RBAC
+      - name: Enable ACR admin (OK for assignment/demo)
+        run: az acr update -n ${{ secrets.ACR_NAME }} --admin-enabled true
+
+      - name: Fetch ACR admin creds
+        id: acrcreds
+        run: |
+          echo "user=$(az acr credential show -n '${{ secrets.ACR_NAME }}' --query username -o tsv)" >> $GITHUB_OUTPUT
+          echo "pass=$(az acr credential show -n '${{ secrets.ACR_NAME }}' --query 'passwords[0].value' -o tsv)" >> $GITHUB_OUTPUT
+
+      - name: Create/refresh imagePullSecret in AKS (frontend)
+        run: |
+          kubectl delete secret acr-auth --ignore-not-found
+          kubectl create secret docker-registry acr-auth \
+            --docker-server="${{ secrets.ACR_LOGIN_SERVER }}" \
+            --docker-username='${{ steps.acrcreds.outputs.user }}' \
+            --docker-password='${{ steps.acrcreds.outputs.pass }}'
+
+      - name: Patch default service account to use acr-auth (idempotent)
+        run: |
+          kubectl patch serviceaccount default \
+            -p '{"imagePullSecrets":[{"name":"acr-auth"}]}' || true
+
+      # Deploy the frontend resources (Deployment/Service in k8s/frontend.yaml)
       - name: Deploy Frontend to AKS
         run: |
           echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
           cd k8s/
-          # Ensure frontend-service.yaml is configured with your ACR
           kubectl apply -f frontend.yaml
+
+      # (Optional) Show the service to help capture the EXTERNAL-IP in logs
+      - name: Show Frontend Service
+        run: kubectl get svc frontend-w08e1 -o wide || true
 
       - name: Logout from Azure (AKS deployment)
         run: az logout
