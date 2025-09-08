@@ -18,11 +18,10 @@ on:
 
 # Define global environment variables that can be used across jobs
 env:
-  # ACR Login Server (e.g., myregistry.azurecr.io)
-  # This needs to be set as a GitHub Repository Secret
-  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-  # Dynamically generate image tags based on Git SHA and GitHub Run ID
-  # This provides unique, traceable tags for each image build
+ ACR_LOGIN_SERVER: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+  # Short ACR name (e.g., myregistry)
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+  # Image tag
   IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
 
 jobs:
@@ -126,19 +125,19 @@ jobs:
 
     # Login to Azure Container Registry (ACR)
     - name: Login to Azure Container Registry
-      run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+      run: az acr login --name ${{ secrets.ACR_NAME }}
 
     # Build and Push Docker image for Product Service
     - name: Build and Push Product Service Image
       run: |
-        docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:latest ./backend/product_service/
-        docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
+        docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:latest:v1 ./backend/product_service/
+        docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:latest:v1
 
     # Build and Push Docker image for Order Service
     - name: Build and Push Order Service Image
       run: |
-        docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:latest ./backend/order_service/
-        docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
+        docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:latest:v1 ./backend/order_service/
+        docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:latest:v1
 
     # Logout from Azure for security (runs even if image push fails)
     - name: Logout from Azure
