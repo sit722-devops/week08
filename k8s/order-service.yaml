@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: order-service-container
-        image: sriniw08acr.azurecr.io/order_service:latest:v1
+        image: image: sriniw08acr.azurecr.io/order_service:v1
         imagePullPolicy: Always
         ports:
         - containerPort: 8000

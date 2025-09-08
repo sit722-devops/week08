@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: product-service-container
-        image: sriniw08acr.azurecr.io/product_service:latest:v1
+        image: sriniw08acr.azurecr.io/product_service:v1
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
