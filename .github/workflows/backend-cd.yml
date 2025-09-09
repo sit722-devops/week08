@@ -6,14 +6,17 @@ on:
       aks_cluster_name:
         description: 'Name of the AKS Cluster to deploy to'
         required: true
+        type: string
         default: 'rudra2306week09-aks'
       aks_resource_group:
         description: 'Resource Group of the AKS Cluster'
         required: true
+        type: string
         default: 'rudra2306week09-rg'
       aks_acr_name:
         description: 'Name of ACR'
         required: true
+        type: string
         default: 'rudra2306week09acr'
 
 jobs:
