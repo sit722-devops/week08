@@ -15,7 +15,13 @@ on:
         description: 'Name of ACR'
         required: true
         type: string
-
+    outputs:
+      product_api_ip:
+        description: "Product API external IP"
+        value: ${{ jobs.deploy_backend.outputs.PRODUCT_API_IP }}
+      order_api_ip:
+        description: "Order API external IP"
+        value: ${{ jobs.deploy_backend.outputs.ORDER_API_IP }}
 
   workflow_dispatch:  # ✅ Added manual trigger
     inputs:
