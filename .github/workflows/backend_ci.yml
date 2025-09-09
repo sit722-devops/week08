@@ -147,7 +147,7 @@ jobs:
 
   deploy_backend:
     needs: [test_and_lint_backends, build_and_push_images]
-    uses: ./.github/workflows/backend_cd.yml
+    uses: ./.github/workflows/backend-cd.yml
     with:
       aks_cluster_name: 'rudra2306week09-aks'
       aks_resource_group: 'rudra2306week09-rg'
