@@ -144,3 +144,13 @@ jobs:
     - name: Logout from Azure
       run: az logout
       if: always()
+
+    - name: Trigger Backend CD
+      uses: peter-evans/workflow-dispatch@v2
+      with:
+        workflow: backend_cd.yml  # name of backend CD workflow file
+        ref: main
+        inputs: |
+          aks_cluster_name: 'rudra2306week09-aks'
+          aks_resource_group: 'rudra2306week09-rg'
+          aks_acr_name: 'rudra2306week09acr'

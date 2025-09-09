@@ -99,3 +99,14 @@ jobs:
 
       - name: Logout from Azure
         run: az logout
+
+      - name: Trigger Frontend CD
+        uses: peter-evans/workflow-dispatch@v2
+        with:
+          workflow: frontend-cd.yml   # name of frontend CD workflow file
+          ref: main
+          inputs: |
+            product_api_ip: ${{ steps.get_product_ip.outputs.external_ip }}
+            order_api_ip: ${{ steps.get_order_ip.outputs.external_ip }}
+            aks_cluster_name: 'rudra2306week09-aks'
+            aks_resource_group: 'rudra2306week09-rg'
