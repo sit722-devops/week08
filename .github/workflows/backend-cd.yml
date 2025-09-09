@@ -1,7 +1,7 @@
 name: CD - Deploy Backend Services to AKS
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       aks_cluster_name:
         description: 'Name of the AKS Cluster to deploy to'
