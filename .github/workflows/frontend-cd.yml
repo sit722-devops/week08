@@ -44,7 +44,7 @@ jobs:
         runs-on: ubuntu-latest
         environment: Production
 
-        steps:
+        # steps:
             - name: Checkout repository
               uses: actions/checkout@v4
 
