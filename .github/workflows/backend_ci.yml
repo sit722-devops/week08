@@ -146,7 +146,7 @@ jobs:
       if: always()
 
     - name: Trigger Backend CD
-      uses: peter-evans/workflow-dispatch@v2
+      uses: peter-evans/workflow-dispatch@v1
       with:
         workflow: backend_cd.yml  # name of backend CD workflow file
         ref: main

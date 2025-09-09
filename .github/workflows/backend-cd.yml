@@ -101,7 +101,7 @@ jobs:
         run: az logout
 
       - name: Trigger Frontend CD
-        uses: peter-evans/workflow-dispatch@v2
+        uses: peter-evans/workflow-dispatch@v1
         with:
           workflow: frontend-cd.yml   # name of frontend CD workflow file
           ref: main
