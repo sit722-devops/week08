@@ -10,15 +10,19 @@ on:
             product_api_ip:
                 description: "External IP of Product Service"
                 required: true
+                type : string
             order_api_ip:
                 description: "External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)"
                 required: true
+                type : string
             aks_cluster_name:
                 description: "Name of the AKS Cluster to deploy to"
                 required: true
+                type : string
             aks_resource_group:
                 description: "Resource Group of the AKS Cluster"
                 required: true
+                type : string
 
     workflow_call:
         inputs:
