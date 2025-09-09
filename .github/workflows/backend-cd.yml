@@ -131,7 +131,6 @@ jobs:
     with:
       aks_cluster_name: 'rudra2306week09-aks'
       aks_resource_group: 'rudra2306week09-rg'
-      aks_acr_name: 'rudra2306week09acr'
       product_api_ip: ${{ needs.deploy_backend.outputs.product_api_ip }}
       order_api_ip: ${{ needs.deploy_backend.outputs.order_api_ip }}
     secrets: inherit
