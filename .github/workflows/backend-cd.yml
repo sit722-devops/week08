@@ -50,15 +50,15 @@ jobs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
       ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
 
-    # steps:
-    #   - name: Checkout repository
-    #     uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    #   - name: Log in to Azure
-    #     uses: azure/login@v1
-    #     with:
-    #       creds: ${{ secrets.AZURE_CREDENTIALS }}
-    #       enable-AzPSSession: true
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true
 
     #   - name: Set Kubernetes context (get AKS credentials)
     #     run: |
