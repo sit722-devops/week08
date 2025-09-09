@@ -11,17 +11,12 @@ on:
   push:
     branches:
       - main # Push to main runs everything
+      - development # Push to development runs everything
     paths:
       - 'backend/**'
       - '.github/workflows/backend_ci.yml'
 
-  # Trigger CI (tests only) on push to development
-  push:
-    branches:
-      - development # Push to development runs only tests
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend_ci.yml'
+
 
   # Trigger CI (tests only) on PRs to main OR development
   pull_request:
