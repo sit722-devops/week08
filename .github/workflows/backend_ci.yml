@@ -1,5 +1,5 @@
 # week08/.github/workflows/backend_ci.yml
-#test
+#testing
 
 name: Backend CI - Test, Build and Push Images to ACR
 
