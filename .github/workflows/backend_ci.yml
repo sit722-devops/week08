@@ -38,7 +38,7 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: products
-        # Make pg_isready available so the service is healthy before tests run
+        # Make pg_isready available so the service is healthy before tests run 1
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
