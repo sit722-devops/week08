@@ -16,6 +16,25 @@ on:
         required: true
         type: string
 
+
+  workflow_dispatch:  # ✅ Added manual trigger
+    inputs:
+      aks_cluster_name:
+        description: 'Name of the AKS Cluster to deploy to'
+        required: true
+        type: string
+        default: 'rudra2306week09-aks'
+      aks_resource_group:
+        description: 'Resource Group of the AKS Cluster'
+        required: true
+        type: string
+        default: 'rudra2306week09-rg'
+      aks_acr_name:
+        description: 'Name of ACR'
+        required: true
+        type: string
+        default: 'rudra2306week09acr'
+
 jobs:
   deploy_backend:
     runs-on: ubuntu-latest
@@ -100,13 +119,13 @@ jobs:
       - name: Logout from Azure
         run: az logout
 
-      - name: Trigger Frontend CD
-        uses: peter-evans/repository-dispatch@v1
-        with:
-          workflow: frontend-cd.yml   # name of frontend CD workflow file
-          ref: main
-          inputs: |
-            product_api_ip: ${{ steps.get_product_ip.outputs.external_ip }}
-            order_api_ip: ${{ steps.get_order_ip.outputs.external_ip }}
-            aks_cluster_name: 'rudra2306week09-aks'
-            aks_resource_group: 'rudra2306week09-rg'
+  deploy_frontend:
+    needs: [deploy_backend]
+    uses: ./.github/workflows/frontend-cd.yml
+    with:
+      aks_cluster_name: 'rudra2306week09-aks'
+      aks_resource_group: 'rudra2306week09-rg'
+      aks_acr_name: 'rudra2306week09acr'
+      product_api_ip: ${{ needs.deploy_backend.outputs.product_api_ip }}
+      order_api_ip: ${{ needs.deploy_backend.outputs.order_api_ip }}
+    secrets: inherit
