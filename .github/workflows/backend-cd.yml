@@ -95,7 +95,7 @@ jobs:
       - name: Create env file with product ip and order ip
         run: |
           # Make a env file
-          printf "PRODUCT_IP=%s\nORDER_IP=%s\n" "${{ env.PRODUCT_IP }}" "${{ env.ORDER_IP }}" > vars.env
+          printf "PRODUCT_IP=%s\nORDER_IP=%s\n" "${{ env.PRODUCT_IP }}" "${{ env.ORDER_IP }}" > id_address_vars.env
           cat id_address_vars.env
 
       - name: Upload artifact (env file)
