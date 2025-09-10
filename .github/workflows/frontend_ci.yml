@@ -81,7 +81,7 @@ jobs:
       uses: actions/download-artifact@v5
       with:
         name: ip-services-artifact
-        repository: $ {{ github.repository }} 
+        repository: ${{ github.repository }} 
         github-token: ${{ secrets.GIT_PAT }}
         path: download
     
