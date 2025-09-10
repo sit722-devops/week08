@@ -34,9 +34,9 @@ jobs:
         run: |
           az aks get-credentials --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_KUBERNETES_CLUSTER }} --overwrite-existing
 
-      - name: Attach ACR
-        run: |
-          az aks update --name ${{ secrets.AZURE_KUBERNETES_CLUSTER }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --attach-acr ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+      # - name: Attach ACR
+      #   run: |
+      #     az aks update --name ${{ secrets.AZURE_KUBERNETES_CLUSTER }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --attach-acr ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
