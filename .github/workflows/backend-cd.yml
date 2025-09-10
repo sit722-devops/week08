@@ -2,19 +2,14 @@ name: CD - Deploy Backend Services to AKS
 
 on:
   workflow_dispatch:
-    inputs:
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_cluster_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<resource_group_name>'
-      aks_acr_name:
-        description: 'Name of ACR'
-        required: true
-        default: '<acr_name>'
+
+  workflow_run:
+    workflows: ["Backend CI - Test, Build and Push Images to ACR"]
+    types:
+      - completed
+    branches:
+      - main
+  
 
 jobs:
   deploy_backend:
@@ -37,11 +32,11 @@ jobs:
 
       - name: Set Kubernetes context (get AKS credentials)
         run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
+          az aks get-credentials --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secret.AZURE_KUBERNETES_CLUSTER }} --overwrite-existing
 
       - name: Attach ACR
         run: |
-          az aks update --name ${{ github.event.inputs.aks_cluster_name }} --resource-group ${{ github.event.inputs.aks_resource_group }} --attach-acr ${{ github.event.inputs.aks_acr_name }}
+          az aks update --name ${{ secret.AZURE_KUBERNETES_CLUSTER }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --attach-acr ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
@@ -96,6 +91,18 @@ jobs:
       - name: Capture Order Service IP for Workflow Output
         id: get_order_ip
         run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
+      
+      - name: Create env file with product ip and order ip
+        run: |
+          # Make a env file
+          printf "PRODUCT_IP=%s\nORDER_IP=%s\n" "${{ env.PRODUCT_IP }}" "${{ env.ORDER_IP }}" > vars.env
+          cat id_address_vars.env
+
+      - name: Upload artifact (env file)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ip-services-artifact
+          path: id_address_vars.env
 
       - name: Logout from Azure
         run: az logout
