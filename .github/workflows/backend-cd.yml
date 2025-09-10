@@ -103,6 +103,7 @@ jobs:
         with:
           name: ip-services-artifact
           path: id_address_vars.env
+          overwrite: true
 
       - name: Logout from Azure
         run: az logout
