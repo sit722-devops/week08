@@ -84,6 +84,7 @@ jobs:
         repository: ${{ github.repository }} 
         github-token: ${{ secrets.GIT_PAT }}
         path: download
+        #check
     
     - name: Set IP address (from artifact or manual inputs)
       run: |
