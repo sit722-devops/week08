@@ -17,11 +17,11 @@ spec:
         app: frontend
     spec:
       containers:
-      - name: frontend-container
-        image: durgeshsamariya.azurecr.io/frontend:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 80
+        - name: frontend-container
+          image: sit722azcr.azurecr.io/frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
 ---
 apiVersion: v1
 kind: Service
