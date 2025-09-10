@@ -5,14 +5,31 @@ name: Frontend CI - Build & Push Image
 on:
   # Manual trigger
   workflow_dispatch:
+    inputs:
+      product_api_ip:
+        description: 'External IP of Product Service'
+        required: true
+        default: 'http://<ip_address>:8000'
+      order_api_ip:
+        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
+        required: true
+        default: 'http://<ip_address>:8001'
 
-  # Automatically on pushes to main branch
   push:
     branches:
-      - main
-    paths: # Only trigger if changes are in the frontend directory
+      - development
+    paths: 
       - 'frontend/**'
-      - '.github/workflows/frontend_ci.yml' # Trigger if this workflow file changes
+      - '.github/workflows/frontend_ci.yml' 
+  pull_request:
+    branches:
+      - development
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend_ci.yml'
+  
+
 
 # Define global environment variables that can be used across jobs
 env:
@@ -29,7 +46,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
@@ -58,6 +75,46 @@ jobs:
     # Login to Azure Container Registry (ACR)
     - name: Login to Azure Container Registry
       run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+
+    - name: Download artifact
+      if: ${{ github.event_name != 'workflow_dispatch' }}
+      uses: actions/download-artifact@v5
+      with:
+        name: ip-services-artifact
+        path: download
+    
+    - name: Set IP address (from artifact or manual inputs)
+      run: |
+        if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+          # source the env file to populate $C and $D
+          if [ ! -f download/id_address_vars.env ]; then
+            echo "The IP address artifact not found"
+            exit 1
+          fi
+          # shell-safe load
+          set -o allexport
+          source download/id_address_vars.env
+          set +o allexport
+        else
+          PRODUCT_IP="${{ inputs.product_api_ip }}"
+          ORDER_IP="${{ inputs.order_api_ip  }}"
+        fi
+
+        echo "PRODUCT_IP=$PRODUCT_IP" >> $$GITHUB_ENV
+        echo "ORDER_IP=$ORDER_IP" >> $$GITHUB_ENV
+
+
+    - name: Inject Backend IPs into Frontend main.js
+      run: |
+        echo "Injecting IPs into frontend/static/js/main.js"
+        # Ensure frontend/main.js is directly in the path for sed
+        sed -i "s|_PRODUCT_API_URL_|${{ env.PRODUCT_IP }}|g" frontend/main.js
+        sed -i "s|_ORDER_API_URL_|${{ env.ORDER_IP }}|g" frontend/main.js
+        
+        # Display the modified file content for debugging
+        echo "--- Modified main.js content ---"
+        cat frontend/main.js
+        echo "---------------------------------"
 
     # Build and Push Docker image for Frontend
     - name: Build and Push Frontend Image
