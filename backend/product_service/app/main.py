@@ -1,4 +1,4 @@
-# week08/backend/product_service/app/main.py
+#week08/backend/product_service/app/main.py
 
 import logging
 import os
