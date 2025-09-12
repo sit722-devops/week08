@@ -1,101 +1,62 @@
-name: CD - Deploy Backend Services to AKS
+name: Backend CD - Deploy product & order services to AKS
 
 on:
   workflow_dispatch:
-    inputs:
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_cluster_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<resource_group_name>'
-      aks_acr_name:
-        description: 'Name of ACR'
-        required: true
-        default: '<acr_name>'
+  push:
+    branches: [ main ]
+    paths:
+      - 'k8s/backend/**'
+      - '.github/workflows/backend_cd.yml'
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  deploy_backend:
+  deploy_backends:
     runs-on: ubuntu-latest
-    environment: Production
-    
-    outputs:
-      PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
-      ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Log in to Azure
-        uses: azure/login@v1
+      - name: Azure login (Service Principal JSON)
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-          enable-AzPSSession: true
 
-      - name: Set Kubernetes context (get AKS credentials)
-        run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
+      # use your compact kubeconfig (Option B)
+      - name: Setup kubectl
+        uses: tale/kubectl-action@v1
+        with:
+          base64-kube-config: ${{ secrets.KUBE_CONFIG }}
+          kubectl-version: v1.32.0
 
-      - name: Attach ACR
+      # first time: apply all backend manifests (adjust path if yours differs)
+      - name: Apply backend manifests
         run: |
-          az aks update --name ${{ github.event.inputs.aks_cluster_name }} --resource-group ${{ github.event.inputs.aks_resource_group }} --attach-acr ${{ github.event.inputs.aks_acr_name }}
-
-      - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
-        run: |
-          echo "Deploying backend infrastructure..."
-          cd k8s/
-          kubectl apply -f configmaps.yaml
-          kubectl apply -f secrets.yaml
-          kubectl apply -f product-db.yaml
-          kubectl apply -f order-db.yaml
-
-      - name: Deploy Backend Microservices (Product, Order)
-        run: |
-          echo "Deploying backend microservices..."
-          cd k8s/
-          kubectl apply -f product-service.yaml
-          kubectl apply -f order-service.yaml
-      
-      - name: Wait for Backend LoadBalancer IPs
-        run: |
-          echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
-          PRODUCT_IP=""
-          ORDER_IP=""
-          
-          for i in $(seq 1 60); do
-            echo "Attempt $i/60 to get IPs..."
-            PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-
-            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
-              echo "All backend LoadBalancer IPs assigned!"
-              echo "Product Service IP: $PRODUCT_IP"
-              echo "Order Service IP: $ORDER_IP"
-              break
-            fi
-            sleep 5 # Wait 5 seconds before next attempt
-          done
-          
-          if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
-            echo "Error: One or more LoadBalancer IPs not assigned after timeout."
-            exit 1 # Fail the job if IPs are not obtained
+          # if you have a single folder for both services:
+          if [ -d k8s/backend ]; then
+            kubectl apply -f k8s/backend
+          else
+            # fallback: try generic k8s folder
+            kubectl apply -f k8s
           fi
-          
-          # These are environment variables for subsequent steps in the *same job*
-          # And used to set the job outputs
-          echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
-          echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
 
-      - name: Capture Product Service IP for Workflow Output
-        id: get_product_ip
-        run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
-      
-      - name: Capture Order Service IP for Workflow Output
-        id: get_order_ip
-        run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
+      # set images to the freshest tags we pushed in CI
+      - name: Update images to latest SHA (idempotent)
+        run: |
+          # product service
+          kubectl set image deployment/product-service \
+            product-service=${ACR_LOGIN_SERVER}/product_service:${IMAGE_TAG} --record || true
+          # order service
+          kubectl set image deployment/order-service \
+            order-service=${ACR_LOGIN_SERVER}/order_service:${IMAGE_TAG} --record || true
 
-      - name: Logout from Azure
-        run: az logout
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/product-service --timeout=120s || true
+          kubectl rollout status deployment/order-service --timeout=120s || true
+
+      - name: Show services
+        run: kubectl get deploy,po,svc -o wide
