@@ -19,29 +19,20 @@ on:
 jobs:
   deploy_backend:
     runs-on: ubuntu-latest
-    environment: Production
-    env:
-      PRODUCT_SVC: product-service-w08e1
-      ORDER_SVC: order-service-w08e1
-
     outputs:
-      PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
-      ORDER_API_IP:   ${{ steps.get_order_ip.outputs.external_ip }}
+      INGRESS_IP: ${{ steps.get_ingress_ip.outputs.ip }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Ensure kubectl exists
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
 
-      # Set kube context to your AKS (more reliable than raw az get-credentials)
       - name: Set AKS context
         uses: azure/aks-set-context@v3
         with:
@@ -49,66 +40,61 @@ jobs:
           cluster-name: ${{ github.event.inputs.aks_cluster_name }}
           resource-group: ${{ github.event.inputs.aks_resource_group }}
 
-      # Safety: make sure AKS can pull from your ACR
+      # Optional – make non-fatal if your SP isn't Owner
       - name: Attach ACR to AKS
+        continue-on-error: true
         run: |
           az aks update \
             --name "${{ github.event.inputs.aks_cluster_name }}" \
             --resource-group "${{ github.event.inputs.aks_resource_group }}" \
-            --attach-acr "${{ github.event.inputs.aks_acr_name }}"
+            --attach-acr "${{ github.event.inputs.aks_acr_name }}" || true
 
-      - name: Show cluster info (debug)
+      - name: Setup helm
+        uses: azure/setup-helm@v4
+
+      - name: Install/upgrade NGINX Ingress (single public IP)
         run: |
-          kubectl version --client
-          kubectl config current-context
-          kubectl get nodes -o wide
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo update
+          helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx --create-namespace
 
-      - name: Deploy backend infra (ConfigMaps, Secrets, DBs)
+      - name: Apply k8s manifests (ClusterIP services + ingress)
         run: |
           kubectl apply -f k8s/configmaps.yaml
           kubectl apply -f k8s/secrets.yaml
           kubectl apply -f k8s/product-db.yaml
           kubectl apply -f k8s/order-db.yaml
-
-      - name: Deploy backend services
-        run: |
           kubectl apply -f k8s/product-service.yaml
           kubectl apply -f k8s/order-service.yaml
+          kubectl apply -f k8s/frontend.yaml
+          kubectl apply -f k8s/ingress.yaml
+          kubectl get pods -A
+          kubectl get svc  -A
 
-      - name: Show resources after apply (debug)
-        run: |
-          kubectl get pods -o wide
-          kubectl get svc  -o wide
-
-      - name: Wait for LoadBalancer IPs
+      - name: Wait for Ingress public IP
         shell: bash
         run: |
           set -euo pipefail
-          echo "Waiting for external IPs (max 5 min)…"
-          for i in {1..60}; do
-            PRODUCT_IP=$(kubectl get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            ORDER_IP=$(kubectl get svc "$ORDER_SVC"   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            echo "Attempt $i: PRODUCT_IP=${PRODUCT_IP:-<pending>}  ORDER_IP=${ORDER_IP:-<pending>}"
-            if [[ -n "${PRODUCT_IP:-}" && -n "${ORDER_IP:-}" ]]; then
-              echo "PRODUCT_IP=$PRODUCT_IP" | tee -a $GITHUB_ENV
-              echo "ORDER_IP=$ORDER_IP"     | tee -a $GITHUB_ENV
+          for i in {1..120}; do
+            IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx \
+                -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            echo "Attempt $i: INGRESS_IP=${IP:-<pending>}"
+            if [[ -n "${IP:-}" ]]; then
+              echo "INGRESS_IP=$IP" >> $GITHUB_ENV
               break
             fi
             sleep 5
           done
-          if [[ -z "${PRODUCT_IP:-}" || -z "${ORDER_IP:-}" ]]; then
-            echo "Timed out waiting for LoadBalancer IPs"
-            echo "Services in cluster:"; kubectl get svc -o wide
+          if [[ -z "${IP:-}" ]]; then
+            echo "Timed out waiting for ingress IP"
+            kubectl get svc -n ingress-nginx -o wide
             exit 1
           fi
 
-      - id: get_product_ip
-        name: Set output PRODUCT_API_IP
-        run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
-
-      - id: get_order_ip
-        name: Set output ORDER_API_IP
-        run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
+      - id: get_ingress_ip
+        name: Capture INGRESS_IP output
+        run: echo "ip=${{ env.INGRESS_IP }}" >> $GITHUB_OUTPUT
 
       - name: Logout
         if: always()
