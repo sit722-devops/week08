@@ -9,51 +9,50 @@ on:
       - '.github/workflows/backend_ci.yml'
 
 env:
-  ACR_NAME: ${{ secrets.AZURE_ACR_NAME }}                 # e.g., acrweek08pramodya
-  ACR_LOGIN_SERVER: ${{ secrets.AZURE_ACR_LOGIN_SERVER }} # e.g., acrweek08pramodya.azurecr.io
+  ACR_NAME:  ${{ secrets.AZURE_ACR_NAME }}
   IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
 
 jobs:
   test_and_lint_backends:
     runs-on: ubuntu-latest
     steps:
-    - run: echo "Skipping tests for now"
-    # (keep your existing test steps unchanged)
+      - run: echo "Skipping tests for now"
 
   build_and_push_images:
     runs-on: ubuntu-latest
     needs: test_and_lint_backends
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Login to Azure (for resource access if you need it)
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ✅ Login to ACR using Docker (no az acr login args confusion)
+      # Quick preflight so we fail with a clear message if a secret is missing
+      - name: Validate ACR secrets
+        run: |
+          test -n "${{ secrets.AZURE_ACR_LOGIN_SERVER }}" || { echo "❌ Missing AZURE_ACR_LOGIN_SERVER"; exit 1; }
+          test -n "${{ secrets.AZURE_ACR_NAME }}"        || { echo "❌ Missing AZURE_ACR_NAME"; exit 1; }
+
       - name: Docker login to ACR
         uses: azure/docker-login@v1
         with:
-          login-server: ${{ env.ACR_LOGIN_SERVER }}
+          login-server: ${{ secrets.AZURE_ACR_LOGIN_SERVER }}   # <-- use the secret directly
           username:     ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
           password:     ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
 
-      # Build & Push Product Service
-      - name: Build and Push Product Service Image
+      - name: Build and Push Product Service
         run: |
-          docker build -t $ACR_LOGIN_SERVER/product_service:latest ./backend/product_service
-          docker push    $ACR_LOGIN_SERVER/product_service:latest
+          docker build -t ${{ secrets.AZURE_ACR_LOGIN_SERVER }}/product_service:latest ./backend/product_service
+          docker push    ${{ secrets.AZURE_ACR_LOGIN_SERVER }}/product_service:latest
 
-      # Build & Push Order Service
-      - name: Build and Push Order Service Image
+      - name: Build and Push Order Service
         run: |
-          docker build -t $ACR_LOGIN_SERVER/order_service:latest ./backend/order_service
-          docker push    $ACR_LOGIN_SERVER/order_service:latest
+          docker build -t ${{ secrets.AZURE_ACR_LOGIN_SERVER }}/order_service:latest ./backend/order_service
+          docker push    ${{ secrets.AZURE_ACR_LOGIN_SERVER }}/order_service:latest
 
-      - name: Logout from Azure
+      - name: Logout
         if: always()
         run: az logout
