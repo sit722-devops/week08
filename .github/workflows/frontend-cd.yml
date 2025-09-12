@@ -18,11 +18,11 @@ on:
       aks_cluster_name:
         description: 'Name of the AKS Cluster to deploy to'
         required: true
-        default: '<aks_name>'
+        default: 'sit722chinthikacluster'
       aks_resource_group:
         description: 'Resource Group of the AKS Cluster'
         required: true
-        default: '<<resource_group_name>'
+        default: 'sit722chinthika-rg'
 
   workflow_call:
     inputs:
