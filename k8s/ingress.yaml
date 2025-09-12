@@ -9,21 +9,21 @@ spec:
   rules:
   - http:
       paths:
-      - path: /(.*)              # frontend at "/"
+      - path: /(.*)              # "/" -> frontend
         pathType: Prefix
         backend:
           service:
             name: frontend-w08e1
             port:
               number: 80
-      - path: /product/?(.*)     # product at "/product"
+      - path: /product/?(.*)     # "/product" -> product API
         pathType: Prefix
         backend:
           service:
             name: product-service-w08e1
             port:
               number: 8000
-      - path: /order/?(.*)       # order at "/order"
+      - path: /order/?(.*)       # "/order" -> order API
         pathType: Prefix
         backend:
           service:

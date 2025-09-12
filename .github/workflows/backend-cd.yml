@@ -49,17 +49,25 @@ jobs:
             --resource-group "${{ github.event.inputs.aks_resource_group }}" \
             --attach-acr "${{ github.event.inputs.aks_acr_name }}" || true
 
-      - name: Setup helm
-        uses: azure/setup-helm@v4
+            - name: Setup helm
+          uses: azure/setup-helm@v4
 
       - name: Install/upgrade NGINX Ingress (single public IP)
         run: |
           helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
           helm repo update
           helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
-            --namespace ingress-nginx --create-namespace
+            --namespace ingress-nginx --create-namespace \
+            --set controller.service.type=LoadBalancer \
+            --wait --timeout 10m
 
-      - name: Apply k8s manifests (ClusterIP services + ingress)
+      - name: Wait for controller to be Ready (and show status)
+        run: |
+          kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=300s
+          kubectl -n ingress-nginx get pods -o wide
+          kubectl -n ingress-nginx get svc -o wide
+
+      - name: Apply k8s manifests (ClusterIP services; no ingress yet)
         run: |
           kubectl apply -f k8s/configmaps.yaml
           kubectl apply -f k8s/secrets.yaml
@@ -68,9 +76,9 @@ jobs:
           kubectl apply -f k8s/product-service.yaml
           kubectl apply -f k8s/order-service.yaml
           kubectl apply -f k8s/frontend.yaml
-          kubectl apply -f k8s/ingress.yaml
-          kubectl get pods -A
-          kubectl get svc  -A
+
+      - name: Apply ingress (after controller is ready)
+        run: kubectl apply -f k8s/ingress.yaml
 
       - name: Wait for Ingress public IP
         shell: bash
@@ -78,7 +86,7 @@ jobs:
           set -euo pipefail
           for i in {1..120}; do
             IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx \
-                -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             echo "Attempt $i: INGRESS_IP=${IP:-<pending>}"
             if [[ -n "${IP:-}" ]]; then
               echo "INGRESS_IP=$IP" >> $GITHUB_ENV
@@ -88,14 +96,6 @@ jobs:
           done
           if [[ -z "${IP:-}" ]]; then
             echo "Timed out waiting for ingress IP"
-            kubectl get svc -n ingress-nginx -o wide
+            kubectl -n ingress-nginx get svc -o wide
             exit 1
           fi
-
-      - id: get_ingress_ip
-        name: Capture INGRESS_IP output
-        run: echo "ip=${{ env.INGRESS_IP }}" >> $GITHUB_OUTPUT
-
-      - name: Logout
-        if: always()
-        run: az logout
