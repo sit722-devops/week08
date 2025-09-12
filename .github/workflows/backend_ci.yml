@@ -10,7 +10,7 @@ on:
       - '.github/workflows/backend_ci.yml'
 
 env:
-  # You already created this secret with value like: sit722acr621416867.azurecr.io
+  # You created this repo secret with value like: sit722acr621416867.azurecr.io
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
   IMAGE_TAG: ${{ github.sha }}
 
@@ -91,7 +91,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ✅ Modern Azure login using the 4 individual secrets you added
+      # ✅ Force service-principal mode (not OIDC) using your four Azure secrets
       - name: Azure login
         uses: azure/login@v2
         with:
@@ -99,13 +99,14 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          auth-type: SERVICE_PRINCIPAL
+          allow-no-subscriptions: true
 
-      # ✅ Convert login server -> registry name (strip ".azurecr.io")
+      # ✅ Convert login server to registry name for az acr login
       - name: Derive ACR_NAME
-        run: |
-          echo "ACR_NAME=${ACR_LOGIN_SERVER%%.azurecr.io}" >> $GITHUB_ENV
+        run: echo "ACR_NAME=${ACR_LOGIN_SERVER%%.azurecr.io}" >> $GITHUB_ENV
 
-      # ✅ CLI-auth to ACR (AKS has pull; this is for push from CI)
+      # ✅ Authenticate the CLI to ACR for docker push
       - name: Login to Azure Container Registry
         run: az acr login --name "$ACR_NAME"
 
@@ -113,16 +114,14 @@ jobs:
         run: |
           docker build -t $ACR_LOGIN_SERVER/product_service:${IMAGE_TAG} ./backend/product_service
           docker push $ACR_LOGIN_SERVER/product_service:${IMAGE_TAG}
-          # optional latest tag
-          docker tag $ACR_LOGIN_SERVER/product_service:${IMAGE_TAG} $ACR_LOGIN_SERVER/product_service:latest
+          docker tag  $ACR_LOGIN_SERVER/product_service:${IMAGE_TAG} $ACR_LOGIN_SERVER/product_service:latest
           docker push $ACR_LOGIN_SERVER/product_service:latest
 
       - name: Build and Push Order Service Image
         run: |
           docker build -t $ACR_LOGIN_SERVER/order_service:${IMAGE_TAG} ./backend/order_service
           docker push $ACR_LOGIN_SERVER/order_service:${IMAGE_TAG}
-          # optional latest tag
-          docker tag $ACR_LOGIN_SERVER/order_service:${IMAGE_TAG} $ACR_LOGIN_SERVER/order_service:latest
+          docker tag  $ACR_LOGIN_SERVER/order_service:${IMAGE_TAG} $ACR_LOGIN_SERVER/order_service:latest
           docker push $ACR_LOGIN_SERVER/order_service:latest
 
       - name: Logout from Azure
