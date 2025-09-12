@@ -56,23 +56,23 @@ jobs:
 
       - name: Deploy backend infra (ConfigMaps, Secrets, DBs)
         run: |
-          kubectl apply -f week08/k8s/configmaps.yaml
-          kubectl apply -f week08/k8s/secrets.yaml
-          kubectl apply -f week08/k8s/product-db.yaml
-          kubectl apply -f week08/k8s/order-db.yaml
+          kubectl apply -f k8s/configmaps.yaml
+          kubectl apply -f k8s/secrets.yaml
+          kubectl apply -f k8s/product-db.yaml
+          kubectl apply -f k8s/order-db.yaml
 
       - name: Deploy backend services
         run: |
-          kubectl apply -f week08/k8s/product-service.yaml
-          kubectl apply -f week08/k8s/order-service.yaml
+          kubectl apply -f k8s/product-service.yaml
+          kubectl apply -f k8s/order-service.yaml
 
       - name: Wait for LoadBalancer IPs
         shell: bash
         run: |
           echo "Waiting for external IPs (max 5 min)…"
           for i in {1..60}; do
-            PRODUCT_IP=$(kubectl get svc product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-            ORDER_IP=$(kubectl get svc order-service-w08e1   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            PRODUCT_IP=$(kubectl get svc product-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            ORDER_IP=$(kubectl get svc order-service   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
               echo "PRODUCT_IP=$PRODUCT_IP" | tee -a $GITHUB_ENV
               echo "ORDER_IP=$ORDER_IP"     | tee -a $GITHUB_ENV
