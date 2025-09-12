@@ -10,8 +10,7 @@ on:
       - '.github/workflows/backend_ci.yml'
 
 env:
-  # You created this repo secret with value like: sit722acr621416867.azurecr.io
-  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}   # e.g. sit722acr621416867.azurecr.io
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -91,22 +90,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ✅ Force service-principal mode (not OIDC) using your four Azure secrets
+      # 🔐 Login with Service Principal JSON (no OIDC/token permission needed)
       - name: Azure login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          auth-type: SERVICE_PRINCIPAL
-          allow-no-subscriptions: true
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ✅ Convert login server to registry name for az acr login
+      # Derive ACR registry name for `az acr login`
       - name: Derive ACR_NAME
         run: echo "ACR_NAME=${ACR_LOGIN_SERVER%%.azurecr.io}" >> $GITHUB_ENV
 
-      # ✅ Authenticate the CLI to ACR for docker push
       - name: Login to Azure Container Registry
         run: az acr login --name "$ACR_NAME"
 
