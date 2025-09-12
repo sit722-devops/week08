@@ -45,6 +45,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Product Service Interactions ---
 
+    window.CONFIG = {
+  PRODUCT_API_URL: "/product",
+  ORDER_API_URL:   "/order"
+};
+
+
     // Fetch and display products
     async function fetchProducts() {
         productListDiv.innerHTML = '<p>Loading products...</p>';
