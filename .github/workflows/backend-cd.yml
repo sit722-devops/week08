@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     env:
-      PRODUCT_SVC: product-service
-      ORDER_SVC: order-service
+      PRODUCT_SVC: product-service-w08e1
+      ORDER_SVC: order-service-w08e1
 
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
