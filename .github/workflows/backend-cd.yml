@@ -20,6 +20,9 @@ jobs:
   deploy_backend:
     runs-on: ubuntu-latest
     environment: Production
+    env:
+      PRODUCT_SVC: product-service
+      ORDER_SVC: order-service
 
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
@@ -34,7 +37,19 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # (Optional) ensure AKS has pull rights to ACR by name
+      # Ensure kubectl exists
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      # Set kube context to your AKS (more reliable than raw az get-credentials)
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ github.event.inputs.aks_cluster_name }}
+          resource-group: ${{ github.event.inputs.aks_resource_group }}
+
+      # Safety: make sure AKS can pull from your ACR
       - name: Attach ACR to AKS
         run: |
           az aks update \
@@ -42,17 +57,11 @@ jobs:
             --resource-group "${{ github.event.inputs.aks_resource_group }}" \
             --attach-acr "${{ github.event.inputs.aks_acr_name }}"
 
-      - name: Get AKS credentials
+      - name: Show cluster info (debug)
         run: |
-          az aks get-credentials \
-            --resource-group "${{ github.event.inputs.aks_resource_group }}" \
-            --name "${{ github.event.inputs.aks_cluster_name }}" \
-            --overwrite-existing
-          kubectl cluster-info
-
-      # If you use a namespace, create it once (idempotent)
-      # - name: Ensure namespace exists
-      #   run: kubectl create namespace week08 --dry-run=client -o yaml | kubectl apply -f -
+          kubectl version --client
+          kubectl config current-context
+          kubectl get nodes -o wide
 
       - name: Deploy backend infra (ConfigMaps, Secrets, DBs)
         run: |
@@ -66,22 +75,31 @@ jobs:
           kubectl apply -f k8s/product-service.yaml
           kubectl apply -f k8s/order-service.yaml
 
+      - name: Show resources after apply (debug)
+        run: |
+          kubectl get pods -o wide
+          kubectl get svc  -o wide
+
       - name: Wait for LoadBalancer IPs
         shell: bash
         run: |
+          set -euo pipefail
           echo "Waiting for external IPs (max 5 min)…"
           for i in {1..60}; do
-            PRODUCT_IP=$(kubectl get svc product-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-            ORDER_IP=$(kubectl get svc order-service   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
+            PRODUCT_IP=$(kubectl get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            ORDER_IP=$(kubectl get svc "$ORDER_SVC"   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            echo "Attempt $i: PRODUCT_IP=${PRODUCT_IP:-<pending>}  ORDER_IP=${ORDER_IP:-<pending>}"
+            if [[ -n "${PRODUCT_IP:-}" && -n "${ORDER_IP:-}" ]]; then
               echo "PRODUCT_IP=$PRODUCT_IP" | tee -a $GITHUB_ENV
               echo "ORDER_IP=$ORDER_IP"     | tee -a $GITHUB_ENV
               break
             fi
             sleep 5
           done
-          if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
-            echo "Timed out waiting for LoadBalancer IPs"; exit 1
+          if [[ -z "${PRODUCT_IP:-}" || -z "${ORDER_IP:-}" ]]; then
+            echo "Timed out waiting for LoadBalancer IPs"
+            echo "Services in cluster:"; kubectl get svc -o wide
+            exit 1
           fi
 
       - id: get_product_ip
