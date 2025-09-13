@@ -1,0 +1,39 @@
+name: Reusable ACR Build
+
+on:
+  workflow_call:
+    inputs:
+      context: { required: true, type: string }      
+      dockerfile: { required: true, type: string }   
+      image_name: { required: true, type: string }    
+      tags: { required: false, type: string, default: latest }
+    secrets:
+      AZURE_CREDENTIALS: { required: true }          
+      ACR_NAME: { required: true }                   
+      ACR_LOGIN_SERVER: { required: true }            
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ACR login
+        run: az acr login --name "${{ secrets.ACR_NAME }}"
+
+      - name: Docker build & push
+        run: |
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/${{ inputs.image_name }}:${{ inputs.tags }}"
+          echo "Building $IMAGE from ${{ inputs.context }} using ${{ inputs.dockerfile }}"
+          docker build -t "$IMAGE" -f "${{ inputs.dockerfile }}" "${{ inputs.context }}"
+          docker push "$IMAGE"
+
+      - name: Azure logout
+        if: always()
+        run: az logout
