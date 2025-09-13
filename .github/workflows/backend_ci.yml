@@ -1,42 +1,38 @@
-name: Backend CI — Build & Push (matrix)
+name: Backend CI - Build & Push Images to ACR
 
 on:
   workflow_dispatch:
   push:
-    branches: [ dev ]
+    branches:
+      - dev
     paths:
       - 'backend/**'
       - '.github/workflows/backend_ci.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend_ci.yml'
-
-concurrency:
-  group: backend-ci-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build_services:
-    # Reusable workflow must be referenced by repo@ref (not a local path)
-    uses: RitikaSharma2815/week08/.github/workflows/reusable-acr-build.yml@dev
-
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - context: backend/product_service
+        svc:
+          - name: backend/product_service
+            context: backend/product_service
             dockerfile: backend/product_service/Dockerfile
-            image_name: product_service
-          - context: backend/order_service
+            image: product_service
+          - name: backend/order_service
+            context: backend/order_service
             dockerfile: backend/order_service/Dockerfile
-            image_name: order_service
+            image: order_service
 
-    with:
-      context: ${{ matrix.context }}
-      dockerfile: ${{ matrix.dockerfile }}
-      image_name: ${{ matrix.image_name }}
-      tags: latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # Pass repo secrets down to the reusable workflow
-    secrets: inherit
+      - name: Build & push ${{ matrix.svc.name }}
+        uses: ./.github/workflows/reusable-acr-build.yml
+        with:
+          context: ${{ matrix.svc.context }}
+          dockerfile: ${{ matrix.svc.dockerfile }}
+          image_name: ${{ matrix.svc.image }}
+          tags: latest
+        secrets: inherit
