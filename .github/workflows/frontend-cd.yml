@@ -1,93 +1,20 @@
-# week08/.github/workflows/frontend-cd.yml
-
-name: CD - Deploy Frontend to AKS
+name: Frontend CD
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'k8s/frontend.yaml'
+      - '.github/workflows/reusable-cd.yml'
   workflow_dispatch:
-    inputs:
-      product_api_ip:
-        description: 'External IP of Product Service'
-        required: true
-        default: 'http://<ip_address>:8000'
-      order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
-        required: true
-        default: 'http://<ip_address>:8001'
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<resource_group_name>'
-
-  workflow_call:
-    inputs:
-      product_api_ip:
-        required: true
-        type: string
-      order_api_ip:
-        required: true
-        type: string
-      aks_cluster_name:
-        required: true
-        type: string
-      aks_resource_group:
-        required: true
-        type: string
 
 jobs:
-  deploy_frontend:
-    runs-on: ubuntu-latest
-    environment: Production
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Login to Azure Container Registry (ACR)
-        run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-
-      - name: Inject Backend IPs into Frontend main.js
-        run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
-
-          echo "--- Modified main.js content ---"
-          cat frontend/main.js
-          echo "---------------------------------"
-
-      # Enable Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # Build and Push multi-arch Frontend Image
-      - name: Build and Push Frontend Image
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest \
-            ./frontend/ \
-            --push
-
-      - name: Set Kubernetes context (get AKS credentials)
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ inputs.aks_resource_group }}
-          cluster-name: ${{ inputs.aks_cluster_name }}
-
-      - name: Deploy Frontend to AKS
-        run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
-          cd k8s/
-          kubectl apply -f frontend.yaml
-
-      - name: Logout from Azure
-        run: az logout
+  call-reusable-cd:
+    uses: ./.github/workflows/reusable-cd.yml
+    with:
+      service: frontend
+      aks_cluster_name: ${{ secrets.AKS_CLUSTER }}
+      aks_resource_group: ${{ secrets.AKS_RG }}
+      aks_acr_name: ${{ secrets.ACR_NAME }}
+    secrets: inherit

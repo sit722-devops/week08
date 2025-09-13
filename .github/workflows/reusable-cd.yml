@@ -1,0 +1,57 @@
+name: Reusable CD
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        required: true
+        type: string
+      aks_cluster_name:
+        required: true
+        type: string
+      aks_resource_group:
+        required: true
+        type: string
+      aks_acr_name:
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Kubernetes context
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ inputs.aks_resource_group }} \
+            --name ${{ inputs.aks_cluster_name }} \
+            --overwrite-existing
+
+      - name: Deploy Frontend
+        if: inputs.service == 'frontend'
+        run: |
+          cd k8s/
+          kubectl apply -f frontend.yaml
+
+      - name: Deploy Backend
+        if: inputs.service == 'backend'
+        run: |
+          cd k8s/
+          kubectl apply -f configmaps.yaml
+          kubectl apply -f secrets.yaml
+          kubectl apply -f product-db.yaml
+          kubectl apply -f order-db.yaml
+          kubectl apply -f product-service.yaml
+          kubectl apply -f order-service.yaml
+
+      - name: Logout
+        run: az logout

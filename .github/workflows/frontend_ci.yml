@@ -1,54 +1,20 @@
-name: Frontend CI - Build & Push Image
+name: Frontend CI
 
 on:
-  # Manual trigger
+  pull_request:
+    branches: [development]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/reusable-ci.yml'
+  push:
+    branches: [development]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/reusable-ci.yml'
   workflow_dispatch:
 
-  # Automatically on pushes to main branch
-  push:
-    branches:
-      - main
-    paths: # Only trigger if changes are in the frontend directory
-      - 'frontend/**'
-      - '.github/workflows/frontend_ci.yml' # Trigger if this workflow file changes
-
-env:
-  # ACR Login Server (e.g., myregistry.azurecr.io)
-  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
-
 jobs:
-  build_and_push_frontend:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    # Azure login using a Service Principal secret
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    # Login to Azure Container Registry (ACR)
-    - name: Login to Azure Container Registry
-      run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
-
-    # Enable Docker Buildx (multi-platform builds)
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    # Build and Push Docker image for Frontend (multi-arch)
-    - name: Build and Push Frontend Image
-      run: |
-        docker buildx build \
-          --platform linux/amd64,linux/arm64 \
-          -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest \
-          ./frontend/ \
-          --push
-
-    # Logout from Azure for security (runs even if image push fails)
-    - name: Logout from Azure
-      run: az logout
-      if: always()
+  call-reusable-ci:
+    uses: ./.github/workflows/reusable-ci.yml
+    with:
+      service_path: frontend
