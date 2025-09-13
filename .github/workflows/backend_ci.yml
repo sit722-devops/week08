@@ -19,22 +19,25 @@ concurrency:
 
 jobs:
   build_services:
-    runs-on: ubuntu-latest
+    # Call the reusable workflow at the JOB level (not a step)
+    uses: RitikaSharma2815/week08/.github/workflows/reusable-acr-build.yml@dev
+
+    # Build both services with a matrix
     strategy:
       matrix:
         include:
-          - svc: product_service
-            context: backend/product_service
+          - context: backend/product_service
             dockerfile: backend/product_service/Dockerfile
-          - svc: order_service
-            context: backend/order_service
+            image_name: product_service
+          - context: backend/order_service
             dockerfile: backend/order_service/Dockerfile
-    steps:
-      - name: Build ${{ matrix.svc }} via reusable workflow
-        uses: RitikaSharma2815/week08/.github/workflows/reusable-acr-build.yml@dev
-        with:
-          context: ${{ matrix.context }}
-          dockerfile: ${{ matrix.dockerfile }}
-          image_name: ${{ matrix.svc }}
-          tags: latest
-        secrets: inherit
+            image_name: order_service
+
+    with:
+      context: ${{ matrix.context }}
+      dockerfile: ${{ matrix.dockerfile }}
+      image_name: ${{ matrix.image_name }}
+      tags: latest
+
+    # Pass secrets from this repo to the reusable workflow
+    secrets: inherit
