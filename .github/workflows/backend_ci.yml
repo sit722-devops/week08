@@ -1,0 +1,40 @@
+name: Backend CI — Build & Push (matrix)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ dev ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend_ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend_ci.yml'
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_services:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - svc: product_service
+            context: backend/product_service
+            dockerfile: backend/product_service/Dockerfile
+          - svc: order_service
+            context: backend/order_service
+            dockerfile: backend/order_service/Dockerfile
+    steps:
+      - name: Build ${{ matrix.svc }} via reusable workflow
+        uses: RitikaSharma2815/week08/.github/workflows/reusable-acr-build.yml@dev
+        with:
+          context: ${{ matrix.context }}
+          dockerfile: ${{ matrix.dockerfile }}
+          image_name: ${{ matrix.svc }}
+          tags: latest
+        secrets: inherit
