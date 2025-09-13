@@ -1,4 +1,4 @@
-name: Frontend CI - Build & Push
+name: Frontend CI - Build & Push Image
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build_frontend:
-    uses: ./.github/workflows/reusable-acr-build.yml
+    uses: RitikaSharma2815/week08/.github/workflows/reusable-acr-build.yml@dev
     with:
       context: frontend
       dockerfile: frontend/Dockerfile
