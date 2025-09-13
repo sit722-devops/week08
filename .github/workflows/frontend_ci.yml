@@ -1,53 +1,28 @@
-name: Frontend CI - Build & Push Image
+name: Frontend CI - Build & Push
 
 on:
   workflow_dispatch:
   push:
+    branches: [ dev ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend_ci.yml'
+  pull_request:
     branches: [ main ]
     paths:
       - 'frontend/**'
-      - '.github/workflows/frontend-ci.yml'
+      - '.github/workflows/frontend_ci.yml'
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build_and_push_image:
-    runs-on: ubuntu-latest
-
-    env:
-      # from repo secrets
-      ACR_NAME: ${{ secrets.ACR_NAME }}                 # e.g. acrweek0820618
-      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }} # e.g. acrweek0820618.azurecr.io
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      # ✅ Robust ACR login: if ACR_NAME is blank, derive it from ACR_LOGIN_SERVER
-      - name: Derive ACR name and login
-        run: |
-          ACR_LOGIN_SERVER="${{ env.ACR_LOGIN_SERVER }}"
-          if [ -z "$ACR_LOGIN_SERVER" ]; then
-            echo "Secret ACR_LOGIN_SERVER is not set."; exit 1
-          fi
-
-          ACR_NAME="${{ env.ACR_NAME }}"
-          if [ -z "$ACR_NAME" ]; then
-            ACR_NAME="$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)"
-          fi
-
-          echo "Using ACR_NAME: $ACR_NAME"
-          az acr login --name "$ACR_NAME"
-
-      # Adjust path if your Dockerfile is not in ./frontend
-      - name: Docker Build & Push
-        run: |
-          docker build -t "${{ env.ACR_LOGIN_SERVER }}/frontend:latest" ./frontend
-          docker push "${{ env.ACR_LOGIN_SERVER }}/frontend:latest"
-
-      - name: Azure Logout
-        if: always()
-        run: az logout
+  build_frontend:
+    uses: ./.github/workflows/reusable-acr-build.yml
+    with:
+      context: frontend
+      dockerfile: frontend/Dockerfile
+      image_name: frontend
+      tags: latest
+    secrets: inherit
