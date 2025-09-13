@@ -1,11 +1,8 @@
-# week08/k8s/frontend.yaml
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: frontend
-  labels:
-    app: frontend
+  name: frontend-w08e1
+  namespace: shop
 spec:
   replicas: 1
   selector:
@@ -17,23 +14,26 @@ spec:
         app: frontend
     spec:
       containers:
-      - name: frontend-container
-        image: durgeshsamariya.azurecr.io/frontend:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 80
+        - name: frontend
+          # use your ACR image
+          image: acrweek0820618.azurecr.io/frontend:latest
+          ports:
+            - containerPort: 80
+          # read backend URLs from the ConfigMap you just made
+          envFrom:
+            - configMapRef:
+                name: frontend-config
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-w08e1 # Service name matches
-  labels:
-    app: frontend
+  name: frontend-service-w08e1
+  namespace: shop
 spec:
+  type: LoadBalancer
   selector:
     app: frontend
   ports:
-    - protocol: TCP
-      port: 80 # The port the service listens on inside the cluster
-      targetPort: 80 # The port on the Pod (containerPort where Nginx runs)
-  type: LoadBalancer # Exposes the service on a port on each Node's IP
+    - name: http
+      port: 80
+      targetPort: 80
