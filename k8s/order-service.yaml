@@ -3,7 +3,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: order-service-w08e1 # Deployment name matches
+  name: order-service-w08e1
   labels:
     app: order-service
 spec:
@@ -21,7 +21,7 @@ spec:
         image: sit722wk08acr.azurecr.io/order_service:latest
         imagePullPolicy: Always
         ports:
-        - containerPort: 8000
+        - containerPort: 8001   # ✅ FIXED
         env:
         - name: POSTGRES_HOST
           value: order-db-service-w08e1
@@ -58,5 +58,5 @@ spec:
   ports:
     - protocol: TCP
       port: 8001
-      targetPort: 8000
+      targetPort: 8001   # ✅ FIXED
   type: LoadBalancer

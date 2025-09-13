@@ -1,5 +1,3 @@
-# week08/k8s/frontend.yaml
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,7 +24,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-w08e1 # Service name matches
+  name: frontend-w08e1
   labels:
     app: frontend
 spec:
@@ -34,6 +32,6 @@ spec:
     app: frontend
   ports:
     - protocol: TCP
-      port: 80 # The port the service listens on inside the cluster
-      targetPort: 80 # The port on the Pod (containerPort where Nginx runs)
-  type: LoadBalancer # Exposes the service on a port on each Node's IP
+      port: 80        # Service port
+      targetPort: 80  # Pod port
+  type: LoadBalancer
