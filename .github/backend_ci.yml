@@ -38,5 +38,5 @@ jobs:
       image_name: ${{ matrix.image_name }}
       tags: latest
 
-    # Pass repo secrets down to the reusable workflow
+    # Pass repo secrets to the reusable workflow
     secrets: inherit

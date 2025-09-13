@@ -3,21 +3,31 @@ name: Reusable ACR Build
 on:
   workflow_call:
     inputs:
-      context: { required: true, type: string }      
-      dockerfile: { required: true, type: string }   
-      image_name: { required: true, type: string }    
-      tags: { required: false, type: string, default: latest }
+      context:     { required: true, type: string }    # build context (folder)
+      dockerfile:  { required: true, type: string }    # path to Dockerfile
+      image_name:  { required: true, type: string }    # repo/name in ACR
+      tags:        { required: false, type: string, default: latest }
     secrets:
-      AZURE_CREDENTIALS: { required: true }          
-      ACR_NAME: { required: true }                   
-      ACR_LOGIN_SERVER: { required: true }            
+      AZURE_CREDENTIALS: { required: true }            # JSON creds
+      ACR_NAME:         { required: true }             # e.g. acrweek0820618
+      ACR_LOGIN_SERVER: { required: true }             # e.g. acrweek0820618.azurecr.io
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Make missing secrets obvious
+      - name: Pre Azure login (validate secrets)
+        run: |
+          test -n "${{ secrets.AZURE_CREDENTIALS }}" || { echo "Missing AZURE_CREDENTIALS secret"; exit 1; }
+          test -n "${{ secrets.ACR_NAME }}" || { echo "Missing ACR_NAME secret"; exit 1; }
+          test -n "${{ secrets.ACR_LOGIN_SERVER }}" || { echo "Missing ACR_LOGIN_SERVER secret"; exit 1; }
 
       - name: Azure login
         uses: azure/login@v1
@@ -36,4 +46,4 @@ jobs:
 
       - name: Azure logout
         if: always()
-        run: az logout
+        run: az logout || true
