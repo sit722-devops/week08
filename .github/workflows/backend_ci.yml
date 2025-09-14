@@ -17,6 +17,8 @@ env:
   ACR_NAME: ${{ secrets.ACR_NAME }}                       # e.g., sit722wk08acr9242
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}       # e.g., sit722wk08acr9242.azurecr.io
   IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+  DOCKER_BUILDKIT: 0
+
 
 jobs:
   test_and_lint_backends:
