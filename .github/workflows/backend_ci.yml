@@ -2,7 +2,9 @@
 # Backend CI workflow for testing, building, and pushing images to ACR
 
 name: Backend CI - Test, Build and Push Images to ACR
-
+defaults:
+  run:
+    working-directory: week08
 on:
   workflow_dispatch:
   push:
