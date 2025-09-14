@@ -1,4 +1,4 @@
-# dev test run
+# automated test run
 
 # Week 08 - Continuous Delivery (CD) to AKS with GitHub Actions
 
