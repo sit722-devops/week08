@@ -16,6 +16,7 @@ on:
         description: "AKS resource group"
         required: true
 
+
 env:
   ACR_NAME: ${{ secrets.ACR_NAME }}                 # e.g. wk08acr88945
   ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }} # e.g. wk08acr88945.azurecr.io
@@ -33,6 +34,9 @@ jobs:
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Debug ACR_NAME
+        run: echo "ACR_NAME is ${{ env.ACR_NAME }}"
+
 
       # ✅ Login using ACR_NAME (not login server)
       - name: Login to Azure Container Registry

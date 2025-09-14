@@ -11,14 +11,15 @@ spec:
   selector:
     matchLabels:
       app: product-service
+      
   template:
     metadata:
       labels:
         app: product-service
     spec:
       containers:
-      - name: product-service-container
-        image: durgeshsamariya.azurecr.io/product_service:latest
+      - name: product-service-containerimage: wk08acr88945.azurecr.io/order:aafc42468518b3ff7d73fc406fb48acb9d725ecb-17706101009
+        
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
