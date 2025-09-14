@@ -6,12 +6,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // from the Docker containers to the host machine in docker-compose.yml for Example 2.
   // week08/frontend/main.js
    // Local (compose)
-   const PRODUCT_API_BASE_URL = "http://localhost:8000";
-   const ORDER_API_BASE_URL   = "http://localhost:8001";
+  
 
 // AKS (when deploying)
-//// const PRODUCT_API_BASE_URL = "http://20.227.114.123:8000";
-//// const ORDER_API_BASE_URL   = "http://20.227.72.39:8001";
+  const PRODUCT_API_BASE_URL = "http://20.227.114.123:8000";
+  const ORDER_API_BASE_URL   = "http://20.227.72.39:8001";
 
 
 
