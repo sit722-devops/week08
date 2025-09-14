@@ -17,10 +17,10 @@ on:
         required: true
 
 env:
-  # from repo secrets
-  ACR_NAME: ${{ secrets.ACR_NAME }}                   # e.g. wk08acr88945
-  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}   # e.g. wk08acr88945.azurecr.io
+  ACR_NAME: ${{ secrets.ACR_NAME }}                 # e.g. wk08acr88945
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }} # e.g. wk08acr88945.azurecr.io
   IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+
 
 jobs:
   deploy_frontend:
