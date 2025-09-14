@@ -2,42 +2,14 @@
 
 name: CD - Deploy Frontend to AKS
 
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
 on:
-  workflow_dispatch:
-    inputs:
-      product_api_ip:
-        description: 'External IP of Product Service'
-        required: true
-        default: 'http://<ip_address>:8000'
-      order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
-        required: true
-        default: 'http://<ip_address>:8001'
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<<resource_group_name>'
-
-  workflow_call:
-    inputs:
-      product_api_ip:
-        required: true
-        type: string
-      order_api_ip:
-        required: true
-        type: string
-      aks_cluster_name:
-        required: true
-        type: string
-      aks_resource_group:
-        required: true
-        type: string
+  # Run automatically when code is pushed to main in frontend folder
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-cd.yml'
 
 jobs:
   deploy_frontend:
@@ -60,12 +32,10 @@ jobs:
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
-          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
+          echo "Injecting IPs into frontend/main.js"
+          sed -i "s|_PRODUCT_API_URL_|${{ secrets.PRODUCT_API_IP }}|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|${{ secrets.ORDER_API_IP }}|g" frontend/main.js
           
-          # Display the modified file content for debugging
           echo "--- Modified main.js content ---"
           cat frontend/main.js
           echo "---------------------------------"
@@ -79,14 +49,13 @@ jobs:
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
         with:
-          resource-group: ${{ inputs.aks_resource_group }}
-          cluster-name: ${{ inputs.aks_cluster_name }}
+          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
       - name: Deploy Frontend to AKS
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
+          echo "Deploying frontend with latest tag to AKS cluster: ${{ secrets.AKS_CLUSTER_NAME }}"
           cd k8s/
-          # Ensure frontend-service.yaml is configured with your ACR
           kubectl apply -f frontend.yaml
 
       - name: Logout from Azure (AKS deployment)

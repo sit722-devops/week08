@@ -1,20 +1,13 @@
 name: CD - Deploy Backend Services to AKS
 
 on:
-  workflow_dispatch:
-    inputs:
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_cluster_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<resource_group_name>'
-      aks_acr_name:
-        description: 'Name of ACR'
-        required: true
-        default: '<acr_name>'
+  # Run automatically when code is pushed to main in backend folder
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-cd.yml'
 
 jobs:
   deploy_backend:
@@ -37,11 +30,10 @@ jobs:
 
       - name: Set Kubernetes context (get AKS credentials)
         run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
-
-      - name: Attach ACR
-        run: |
-          az aks update --name ${{ github.event.inputs.aks_cluster_name }} --resource-group ${{ github.event.inputs.aks_resource_group }} --attach-acr ${{ github.event.inputs.aks_acr_name }}
+          az aks get-credentials \
+            --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
+            --name ${{ secrets.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
@@ -64,28 +56,22 @@ jobs:
           echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
           PRODUCT_IP=""
           ORDER_IP=""
-          
           for i in $(seq 1 60); do
             echo "Attempt $i/60 to get IPs..."
             PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
             ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
               echo "All backend LoadBalancer IPs assigned!"
               echo "Product Service IP: $PRODUCT_IP"
               echo "Order Service IP: $ORDER_IP"
               break
             fi
-            sleep 5 # Wait 5 seconds before next attempt
+            sleep 5
           done
-          
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
             echo "Error: One or more LoadBalancer IPs not assigned after timeout."
-            exit 1 # Fail the job if IPs are not obtained
+            exit 1
           fi
-          
-          # These are environment variables for subsequent steps in the *same job*
-          # And used to set the job outputs
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
           echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
 
