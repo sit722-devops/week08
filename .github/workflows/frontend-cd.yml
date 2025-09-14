@@ -59,11 +59,10 @@ jobs:
       # Deploy frontend
       - name: Deploy Frontend to AKS
         run: |
-          # Update deployment image (adjust deployment/container names if different)
-          kubectl set image deployment/frontend-deployment frontend="${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }}" -n default || true
-          # Apply manifest if exists
-          kubectl apply -f k8s/frontend.yaml || true
-
+         kubectl apply -f k8s/frontend.yaml
+         kubectl set image deployment/frontend \
+         frontend-container="${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }}" \
+         --record -n default
       - name: Logout from Azure (AKS deployment)
         if: always()
         run: az logout
