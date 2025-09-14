@@ -1,5 +1,3 @@
-# Test
-
 # week08/.github/workflows/frontend-cd.yml
 
 name: CD - Deploy Frontend to AKS
@@ -34,7 +32,7 @@ jobs:
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
+          echo "Injecting IPs into frontend/main.js"
           sed -i "s|_PRODUCT_API_URL_|${{ secrets.PRODUCT_API_IP }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ secrets.ORDER_API_IP }}|g" frontend/main.js
           
@@ -51,12 +49,12 @@ jobs:
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
         with:
-          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          cluster-name: ${{ secrets.AZURE_AKS_CLUSTER }}
+          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
       - name: Deploy Frontend to AKS
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ secrets.AZURE_AKS_CLUSTER }}"
+          echo "Deploying frontend with latest tag to AKS cluster: ${{ secrets.AKS_CLUSTER_NAME }}"
           cd k8s/
           kubectl apply -f frontend.yaml
 
