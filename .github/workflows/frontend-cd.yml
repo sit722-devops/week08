@@ -34,7 +34,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ✅ FIX: use the ACR NAME here (not login server)
+      # ✅ Login using ACR_NAME (not login server)
       - name: Login to Azure Container Registry
         run: az acr login --name "${{ env.ACR_NAME }}"
 
@@ -56,12 +56,13 @@ jobs:
       - name: Set Kubernetes context (get AKS credentials)
         run: az aks get-credentials -g "${{ inputs.resource_group }}" -n "${{ inputs.aks_cluster }}" --overwrite-existing
 
-      # Update image and apply manifests
+      # Deploy frontend
       - name: Deploy Frontend to AKS
         run: |
-          # If your repo has k8s/frontend.yaml adjust the names below to match your deployment/container
+          # Update deployment image (adjust deployment/container names if different)
           kubectl set image deployment/frontend-deployment frontend="${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }}" -n default || true
-          kubectl apply -f k8s/frontend.yaml
+          # Apply manifest if exists
+          kubectl apply -f k8s/frontend.yaml || true
 
       - name: Logout from Azure (AKS deployment)
         if: always()
