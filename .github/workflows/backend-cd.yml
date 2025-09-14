@@ -9,22 +9,6 @@ on:
       - 'backend/**'
       - '.github/workflows/backend-cd.yml'
 
-  # allow manual trigger with custom inputs
-  workflow_dispatch:
-    inputs:
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_cluster_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<resource_group_name>'
-      aks_acr_name:
-        description: 'Name of ACR'
-        required: true
-        default: '<acr_name>'
-
 jobs:
   deploy_backend:
     runs-on: ubuntu-latest
@@ -47,8 +31,8 @@ jobs:
       - name: Set Kubernetes context (get AKS credentials)
         run: |
           az aks get-credentials \
-            --resource-group ${{ github.event.inputs.aks_resource_group || secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ github.event.inputs.aks_cluster_name || secrets.AZURE_AKS_CLUSTER }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.AZURE_AKS_CLUSTER }} \
             --overwrite-existing
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
