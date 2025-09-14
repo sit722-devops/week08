@@ -1,6 +1,15 @@
 name: CD - Deploy Backend Services to AKS
 
 on:
+  # Run automatically when code is pushed to main in backend folder
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-cd.yml'
+
+  # allow manual trigger with custom inputs
   workflow_dispatch:
     inputs:
       aks_cluster_name:
@@ -37,8 +46,10 @@ jobs:
 
       - name: Set Kubernetes context (get AKS credentials)
         run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
-
+          az aks get-credentials \
+            --resource-group ${{ github.event.inputs.aks_resource_group || secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ github.event.inputs.aks_cluster_name || secrets.AZURE_AKS_CLUSTER }} \
+            --overwrite-existing
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
