@@ -1,0 +1,33 @@
+name: Reusable CI
+
+on:
+  workflow_call:
+    inputs:
+      service_path:
+        required: true
+        type: string
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.service_path }}   # ✅ corrected
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: hashFiles(format('{0}/package.json', inputs.service_path)) != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies (Node)
+        if: hashFiles(format('{0}/package.json', inputs.service_path)) != ''
+        run: npm ci
+
+      - name: Run tests (Node)
+        if: hashFiles(format('{0}/package.json', inputs.service_path)) != ''
+        run: npm test --if-present
