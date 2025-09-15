@@ -2,16 +2,9 @@ name: Backend CI
 
 on:
   pull_request:
-    branches: [development]
     paths:
       - 'backend/**'
-      - '.github/workflows/reusable-ci.yml'
-  push:
-    branches: [development]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/reusable-ci.yml'
-  workflow_dispatch:
+      - '.github/workflows/backend_ci.yml'
 
 jobs:
   call-reusable-ci:

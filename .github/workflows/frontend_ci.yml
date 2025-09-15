@@ -2,16 +2,9 @@ name: Frontend CI
 
 on:
   pull_request:
-    branches: [development]
     paths:
       - 'frontend/**'
-      - '.github/workflows/reusable-ci.yml'
-  push:
-    branches: [development]
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/reusable-ci.yml'
-  workflow_dispatch:
+      - '.github/workflows/frontend_ci.yml'
 
 jobs:
   call-reusable-ci:
