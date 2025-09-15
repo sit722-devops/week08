@@ -14,7 +14,4 @@ jobs:
     uses: ./.github/workflows/reusable-cd.yml
     with:
       service: backend
-      aks_cluster_name: ${{ secrets.AKS_CLUSTER }}
-      aks_resource_group: ${{ secrets.AKS_RG }}
-      aks_acr_name: ${{ secrets.ACR_NAME }}
     secrets: inherit
