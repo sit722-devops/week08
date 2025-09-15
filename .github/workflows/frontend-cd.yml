@@ -2,27 +2,21 @@
 
 name: CD - Deploy Frontend to AKS
 
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       product_api_ip:
-        description: 'External IP of Product Service'
         required: true
-        default: 'http://<ip_address>:8000'
+        type: string
       order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
         required: true
-        default: 'http://<ip_address>:8001'
+        type: string
       aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
         required: true
-        default: '<aks_name>'
+        type: string
       aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
         required: true
-        default: '<<resource_group_name>'
+        type: string
 
   workflow_call:
     inputs:

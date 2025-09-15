@@ -5,14 +5,13 @@ name: Backend CI - Test, Build and Push Images to ACR
 # Trigger the workflow on pushes to the 'main' branch
 # You can also add 'pull_request:' to run on PRs
 on:
-  # Manual trigger
-  workflow_dispatch:
-
-  # Automatically on pushes to main branch
+  pull_request:
+    branches: [ "development" ]
+    paths:
+      - 'backend/**'
   push:
-    branches:
-      - main
-    paths: # Only trigger if changes are in backend directories
+    branches: [ "development" ]
+    paths:
       - 'backend/**'
       - '.github/workflows/backend_ci.yml' # Trigger if this workflow file changes
 

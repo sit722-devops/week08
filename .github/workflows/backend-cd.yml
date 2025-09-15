@@ -1,20 +1,11 @@
 name: CD - Deploy Backend Services to AKS
 
 on:
-  workflow_dispatch:
-    inputs:
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_cluster_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<resource_group_name>'
-      aks_acr_name:
-        description: 'Name of ACR'
-        required: true
-        default: '<acr_name>'
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'backend/**'
+      - 'k8s/**'
 
 jobs:
   deploy_backend:
@@ -24,6 +15,15 @@ jobs:
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
       ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
+
+    trigger_frontend_cd:
+    needs: deploy_backend
+    uses: ./.github/workflows/frontend-cd.yml
+    with:
+      product_api_ip: ${{ needs.deploy_backend.outputs.product_ip }}
+      order_api_ip: ${{ needs.deploy_backend.outputs.order_ip }}
+      aks_cluster_name: "<aks_name>"
+      aks_resource_group: "<resource_group>"
 
     steps:
       - name: Checkout repository
