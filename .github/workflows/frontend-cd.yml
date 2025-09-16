@@ -1,7 +1,6 @@
 name: CD - Deploy Frontend to AKS
 
 on:
-  # Called automatically by backend-cd.yml
   workflow_call:
     inputs:
       product_api_ip:
@@ -12,57 +11,42 @@ on:
         description: Order API URL (e.g., http://Y.Y.Y.Y:8001)
         required: true
         type: string
-      # Optional: keep these if backend-cd still passes them; otherwise we'll use secrets
+      # Optional inputs; defaults to Environment/Repo secrets if omitted
       aks_cluster_name:
         required: false
         type: string
       aks_resource_group:
         required: false
         type: string
-
   # Optional manual trigger
-  workflow_dispatch:
-    inputs:
-      product_api_ip:
-        description: 'Product API URL'
-        required: true
-        default: 'http://<ip>:8000'
-      order_api_ip:
-        description: 'Order API URL'
-        required: true
-        default: 'http://<ip>:8001'
-      aks_cluster_name:
-        description: 'AKS Cluster (leave blank to use Environment secret)'
-        required: false
-      aks_resource_group:
-        description: 'AKS RG (leave blank to use Environment secret)'
-        required: false
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 env:
-  # From Environment secrets (Settings → Environments → Production → Secrets)
-  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}   # e.g. arulrajahacr.azurecr.io
+  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
   K8S_NAMESPACE: ecommerce
 
 jobs:
   deploy_frontend:
     runs-on: ubuntu-latest
-    environment: Production   # <-- This activates Environment protection rules
+    environment: Production
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v1
+      - uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}  # store this in the Production environment
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Derive ACR name and SHORT_SHA
         run: |
           echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
           echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl get ns "$K8S_NAMESPACE" >/dev/null 2>&1 || kubectl create ns "$K8S_NAMESPACE"
 
       - name: Inject backend URLs into main.js
         run: |
@@ -78,11 +62,11 @@ jobs:
           docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA}
 
       - name: Set AKS context
-        uses: azure/aks-set-context@v3
-        with:
-          # Prefer inputs if provided, else fall back to Environment secrets
-          resource-group: ${{ inputs.aks_resource_group || secrets.AKS_RESOURCE_GROUP }}
-          cluster-name:   ${{ inputs.aks_cluster_name   || secrets.AKS_CLUSTER_NAME }}
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ inputs.aks_resource_group || secrets.AKS_RESOURCE_GROUP }}" \
+            --name "${{ inputs.aks_cluster_name   || secrets.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
 
       - name: Apply manifests and pin image to SHA tag
         run: |

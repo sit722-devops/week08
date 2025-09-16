@@ -1,20 +1,14 @@
 name: Frontend CI - Build & Push Image
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [ main, dev, develop ]
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend_ci.yml'
-  pull_request:
+  workflow_call: {}                     # called by the orchestrator
+  pull_request:                         # PR checks (no image push)
     branches: [ main, dev, develop ]
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend_ci.yml'
 
 env:
-  # e.g. arulrajahacr.azurecr.io
   ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
 jobs:
@@ -23,34 +17,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # PRs and dev/develop pushes: make sure it builds (no login, no push)
-      - name: Build Frontend (no push on PR/dev)
-        if: ${{ github.event_name == 'pull_request' || github.ref_name == 'dev' || github.ref_name == 'develop' }}
+      # PRs: verify it builds, but don't push
+      - name: Build Frontend (PR check only)
+        if: ${{ github.event_name == 'pull_request' }}
         run: docker build -t frontend-ci-check ./frontend/
 
-      # Only push when it's a push to main
+      # Orchestrated main: build & push with SHA
       - name: Azure Login
-        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        if: ${{ github.event_name == 'workflow_call' }}
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Derive ACR name and SHORT_SHA
-        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        if: ${{ github.event_name == 'workflow_call' }}
         run: |
           echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
           echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
       - name: Login to Azure Container Registry
-        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        if: ${{ github.event_name == 'workflow_call' }}
         run: az acr login --name ${{ env.ACR_NAME }}
 
       - name: Build & Push frontend (:SHORT_SHA)
-        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        if: ${{ github.event_name == 'workflow_call' }}
         run: |
           docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA} ./frontend/
           docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA}
 
       - name: Logout Azure
-        if: ${{ always() && github.event_name == 'push' && github.ref_name == 'main' }}
+        if: ${{ always() && github.event_name == 'workflow_call' }}
         run: az logout
