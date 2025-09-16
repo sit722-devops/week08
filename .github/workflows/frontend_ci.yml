@@ -19,24 +19,24 @@ jobs:
 
       # PRs: verify it builds, but don't push
       - name: Build Frontend (PR check only)
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull' }}
         run: docker build -t frontend-ci-check ./frontend/
 
       # Orchestrated main: build & push :latest (and :SHORT_SHA)
       - name: Azure Login
-        if: ${{ github.event_name == 'workflow_call' }}
+        if: ${{ github.event_name == 'push' }}
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Derive ACR name and SHORT_SHA
-        if: ${{ github.event_name == 'workflow_call' }}
+        if: ${{ github.event_name == 'push' }}
         run: |
           echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
           echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
       - name: Login to Azure Container Registry
-        if: ${{ github.event_name == 'workflow_call' }}
+        if: ${{ github.event_name == 'push' }}
         run: az acr login --name ${{ env.ACR_NAME }}
 
       # NEW: tag and push :latest (and keep :SHORT_SHA)
