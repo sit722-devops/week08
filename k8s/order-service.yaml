@@ -18,6 +18,7 @@ spec:
     spec:
       containers:
       - name: order-service-container
+        # This is the correct image from your branch
         image: sit722acrvincent.azurecr.io/order_service:latest
         imagePullPolicy: Always
         ports:
