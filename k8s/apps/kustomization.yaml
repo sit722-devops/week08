@@ -1,0 +1,11 @@
+# k8s/apps/kustomization.yaml
+# This file lists all the Kubernetes resources for the deployable applications.
+# The 'kubectl apply -k k8s/apps/' command will apply all these files.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - product-service.yaml
+  - order-service.yaml
+  - frontend.yaml

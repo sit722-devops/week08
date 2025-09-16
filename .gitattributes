@@ -1,0 +1,9 @@
+# Set the default behavior to handle line endings automatically
+* text=auto
+
+# Enforce LF for file types that must have Linux line endings
+*.sh    eol=lf
+*.py    eol=lf
+*.yml   eol=lf
+*.yaml  eol=lf
+Dockerfile eol=lf

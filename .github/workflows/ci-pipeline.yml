@@ -1,0 +1,115 @@
+
+name: CI - Test, Build and Push Images
+
+on:
+  pull_request:
+    branches:
+      - develop # Triggers on Pull Requests targeting the 'develop' branch
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/ci-pipeline.yml'
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }} # Your ACR login server, e.g., myacr.azurecr.io
+  IMAGE_TAG: ${{ github.sha }} # Use the unique Git commit SHA as the image tag
+
+jobs:
+  test_backend:
+    runs-on: ubuntu-latest
+    # This job only runs if backend files were changed in the PR
+    if: "contains(github.head_ref, 'backend') || contains(github.base_ref, 'develop')" # A simple way to check for backend changes
+    
+    services:
+      # This setup is taken from the original backend_ci.yml
+      product_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: products
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+        ports:
+          - 5432:5432
+      order_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orders
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+        ports:
+          - 5433:5432
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r backend/product_service/requirements.txt
+          pip install -r backend/order_service/requirements.txt
+          pip install pytest httpx
+
+      - name: Run product_service tests
+        working-directory: backend/product_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: products
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: pytest tests
+
+      - name: Run order_service tests
+        working-directory: backend/order_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+          POSTGRES_DB: orders
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: pytest tests
+
+  build_and_push_images:
+    runs-on: ubuntu-latest
+    # This job depends on the successful completion of the test_backend job
+    needs: test_backend
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+
+      - name: Build and Push All Images with Git SHA Tag
+        run: |
+          # Build and Push Product Service
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }} ./backend/product_service/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }}
+
+          # Build and Push Order Service
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }} ./backend/order_service/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }}
+          
+          # Build and Push Frontend Service
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }} ./frontend/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }}
+
+      - name: Logout from Azure
+        if: always()
+        run: az logout

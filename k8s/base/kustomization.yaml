@@ -1,0 +1,12 @@
+# k8s/base/kustomization.yaml
+# This file lists all the Kubernetes resources that make up the base infrastructure.
+# The 'kubectl apply -k k8s/base/' command will apply all these files in order.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - configmaps.yaml
+  - secrets.yaml
+  - product-db.yaml
+  - order-db.yaml

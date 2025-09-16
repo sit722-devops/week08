@@ -1,5 +1,12 @@
 # week08/k8s/frontend.yaml
-
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+data:
+  PRODUCT_API_URL: "http://product-service-w08e1:8000"
+  ORDER_API_URL: "http://order-service-w08e1:8001"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,6 +29,9 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 80
+        envFrom:
+        - configMapRef:
+            name: frontend-config
 ---
 apiVersion: v1
 kind: Service
