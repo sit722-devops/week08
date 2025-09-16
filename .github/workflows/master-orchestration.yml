@@ -134,7 +134,7 @@ jobs:
     with:
       product-ip: ${{ needs.backend-pipeline.outputs.product-ip || 'auto-detect' }}
       order-ip: ${{ needs.backend-pipeline.outputs.order-ip || 'auto-detect' }}
-      environment: ${{ env.ENVIRONMENT }}
+      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
     secrets: inherit
 
   # Health Check and Monitoring
@@ -142,7 +142,7 @@ jobs:
     needs: [detect-changes, backend-pipeline, frontend-pipeline]
     if: always() && (needs.backend-pipeline.result == 'success' || needs.frontend-pipeline.result == 'success')
     runs-on: ubuntu-latest
-    environment: ${{ env.ENVIRONMENT }}
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
 
     steps:
       - name: Checkout
