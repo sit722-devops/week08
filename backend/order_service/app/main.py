@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .db import Base, engine, get_db
 from .models import Order, OrderItem
-from .schemas import OrderCreate, OrderItemResponse, OrderResponse, OrderUpdate
+from .schemas import OrderCreate, OrderItemResponse, OrderResponse
 
 # --- Standard Logging Configuration ---
 logging.basicConfig(
@@ -29,15 +29,20 @@ logger = logging.getLogger(__name__)
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 logging.getLogger("uvicorn.error").setLevel(logging.INFO)
 
-PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8000")
+PRODUCT_SERVICE_URL = os.getenv(
+    "PRODUCT_SERVICE_URL", "http://localhost:8000"
+)
 logger.info(
-    f"Order Service: Configured to communicate with Product Service at: {PRODUCT_SERVICE_URL}"
+    f"Order Service: Configured to communicate with Product Service at: "
+    f"{PRODUCT_SERVICE_URL}"
 )
 
 # --- FastAPI Application Setup ---
 app = FastAPI(
     title="Order Service API",
-    description="Manages orders for mini-ecommerce app, with synchronous stock deduction.",
+    description=(
+        "Manages orders for mini-ecommerce app, with synchronous stock deduction."
+    ),
     version="1.0.0",
 )
 
@@ -59,15 +64,19 @@ async def startup_event():
     for i in range(max_retries):
         try:
             logger.info(
-                f"Order Service: Attempting to connect to PostgreSQL and create tables (attempt {i+1}/{max_retries})..."
+                f"Order Service: Attempting to connect to PostgreSQL and create "
+                f"tables (attempt {i+1}/{max_retries})..."
             )
             Base.metadata.create_all(bind=engine)
             logger.info(
-                "Order Service: Successfully connected to PostgreSQL and ensured tables exist."
+                "Order Service: Successfully connected to PostgreSQL and ensured "
+                "tables exist."
             )
             break  # Exit loop if successful
         except OperationalError as e:
-            logger.warning(f"Order Service: Failed to connect to PostgreSQL: {e}")
+            logger.warning(
+                f"Order Service: Failed to connect to PostgreSQL: {e}"
+            )
             if i < max_retries - 1:
                 logger.info(
                     f"Order Service: Retrying in {retry_delay_seconds} seconds..."
@@ -75,12 +84,14 @@ async def startup_event():
                 time.sleep(retry_delay_seconds)
             else:
                 logger.critical(
-                    f"Order Service: Failed to connect to PostgreSQL after {max_retries} attempts. Exiting application."
+                    f"Order Service: Failed to connect to PostgreSQL after "
+                    f"{max_retries} attempts. Exiting application."
                 )
                 sys.exit(1)  # Critical failure: exit if DB connection is unavailable
         except Exception as e:
             logger.critical(
-                f"Order Service: An unexpected error occurred during database startup: {e}",
+                f"Order Service: An unexpected error occurred during database "
+                f"startup: {e}",
                 exc_info=True,
             )
             sys.exit(1)
@@ -93,7 +104,9 @@ async def read_root():
 
 
 # --- Health Check Endpoint ---
-@app.get("/health", status_code=status.HTTP_200_OK, summary="Health check endpoint")
+@app.get(
+    "/health", status_code=status.HTTP_200_OK, summary="Health check endpoint"
+)
 async def health_check():
     return {"status": "ok", "service": "order-service"}
 
@@ -113,7 +126,9 @@ async def create_order(order: OrderCreate, db: Session = Depends(get_db)):
 
     # List to store successfully deducted items in case of partial failures
     successfully_deducted_items = []
-    logger.info(f"Order Service: Creating new order for user_id: {order.user_id}")
+    logger.info(
+        f"Order Service: Creating new order for user_id: {order.user_id}"
+    )
 
     # Use an httpx client for synchronous calls to the Product Service
     async with httpx.AsyncClient() as client:
@@ -125,9 +140,14 @@ async def create_order(order: OrderCreate, db: Session = Depends(get_db)):
                 f"{PRODUCT_SERVICE_URL}/products/{product_id}/deduct-stock"
             )
             logger.info(
-                f"Order Service: Attempting to deduct stock for product {product_id} (qty: {quantity}) via Product Service at {deduct_stock_url}"
+                f"Order Service: Attempting to deduct stock for product "
+                f"{product_id} (qty: {quantity}) via Product Service at "
+                f"{deduct_stock_url}"
             )
-            # kubectl exec -it order-service-w04e2-64585d75f9-bt5rv -n ecomm-w04e2-local-k8s -- curl -X POST -H "Content-Type: application/json" -d '{"quantity_to_deduct": 2}' http://product-service-w04e2:8000/products/1/deduct_stock_url
+            # kubectl exec -it order-service-w04e2-64585d75f9-bt5rv -n \
+            # ecomm-w04e2-local-k8s -- curl -X POST -H "Content-Type: \
+            # application/json" -d '{"quantity_to_deduct": 2}' \
+            # http://product-service-w04e2:8000/products/1/deduct_stock_url
             try:
                 # Synchronous call to Product Service to deduct stock
                 response = await client.patch(
@@ -135,10 +155,11 @@ async def create_order(order: OrderCreate, db: Session = Depends(get_db)):
                     json={"quantity_to_deduct": quantity},
                     timeout=5,  # Set a timeout for the external API call
                 )
-                response.raise_for_status()  # Raise an exception for 4xx/5xx responses
+                response.raise_for_status()  # Raise exception for 4xx/5xx
 
                 logger.info(
-                    f"Order Service: Stock deduction successful for product {product_id}."
+                    f"Order Service: Stock deduction successful for product "
+                    f"{product_id}."
                 )
                 successfully_deducted_items.append(item)
 
@@ -154,23 +175,31 @@ async def create_order(order: OrderCreate, db: Session = Depends(get_db)):
                     )
 
                 logger.error(
-                    f"Order Service: Stock deduction failed for product {product_id}: {error_detail}. Status: {e.response.status_code}"
+                    f"Order Service: Stock deduction failed for product "
+                    f"{product_id}: {error_detail}. Status: {e.response.status_code}"
                 )
                 # Rollback any previously successful deductions in case of failure
                 await _rollback_stock_deductions(client, successfully_deducted_items)
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,  # Or appropriate status
-                    detail=f"Failed to deduct stock for product {product_id}: {error_detail}",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Failed to deduct stock for product {product_id}: "
+                        f"{error_detail}"
+                    ),
                 )
             except httpx.RequestError as e:
                 # Handle network errors (e.g., Product Service is down)
                 logger.critical(
-                    f"Order Service: Network error communicating with Product Service for product {product_id}: {e}"
+                    f"Order Service: Network error communicating with Product "
+                    f"Service for product {product_id}: {e}"
                 )
                 await _rollback_stock_deductions(client, successfully_deducted_items)
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Product Service is currently unavailable. Please try again later. Error: {e}",
+                    detail=(
+                        f"Product Service is currently unavailable. Please try "
+                        f"again later. Error: {e}"
+                    ),
                 )
             except Exception as e:
                 # Catch any other unexpected errors during deduction
@@ -252,7 +281,8 @@ async def _rollback_stock_deductions(client: httpx.AsyncClient, items: List[Orde
     for item in items:
         product_id = item.product_id
         quantity = item.quantity
-        add_stock_url = f"{PRODUCT_SERVICE_URL}/products/{product_id}/deduct-stock"  # Assuming -ve quantity adds stock
+        # Assuming -ve quantity adds stock
+        add_stock_url = f"{PRODUCT_SERVICE_URL}/products/{product_id}/deduct-stock"
 
         logger.warning(
             f"Order Service: Cannot automatically rollback stock for product {product_id} quantity {quantity}. Manual stock adjustment may be required in Product Service."
