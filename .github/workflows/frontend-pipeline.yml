@@ -109,7 +109,7 @@ jobs:
     needs: test-and-build
     if: needs.test-and-build.outputs.should-deploy == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ env.ENVIRONMENT }}
+    environment: ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
 
     steps:
       - name: Checkout repository
@@ -131,7 +131,7 @@ jobs:
             az login --service-principal --username ${{ secrets.AZURE_CLIENT_ID }} --password ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
             
             # Set Kubernetes context
-            if [[ "${{ env.ENVIRONMENT }}" == "production" ]]; then
+            if [[ "${{ inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}" == "production" ]]; then
               AKS_CLUSTER="${{ secrets.PROD_AKS_CLUSTER }}"
               RESOURCE_GROUP="${{ secrets.PROD_RESOURCE_GROUP }}"
             else
@@ -209,13 +209,13 @@ jobs:
 
       - name: Deploy Frontend to AKS
         run: |
-          echo "Deploying frontend to ${{ env.ENVIRONMENT }} environment..."
+          echo "Deploying frontend to ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }} environment..."
 
           # Azure login
           az login --service-principal --username ${{ secrets.AZURE_CLIENT_ID }} --password ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
 
           # Set Kubernetes context
-          if [[ "${{ env.ENVIRONMENT }}" == "production" ]]; then
+          if [[ "${{ inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}" == "production" ]]; then
             AKS_CLUSTER="${{ secrets.PROD_AKS_CLUSTER }}"
             RESOURCE_GROUP="${{ secrets.PROD_RESOURCE_GROUP }}"
           else
@@ -226,7 +226,7 @@ jobs:
           az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_CLUSTER --overwrite-existing
 
           # Deploy frontend
-          cd k8s/${{ env.ENVIRONMENT }}/
+          cd k8s/${{ inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}/
           kubectl apply -f frontend.yaml
 
           # Wait for deployment to be ready

@@ -142,7 +142,7 @@ jobs:
     needs: test-and-build
     if: needs.test-and-build.outputs.should-deploy == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ env.ENVIRONMENT }}
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
     outputs:
       product-ip: ${{ steps.get-ips.outputs.product-ip }}
       order-ip: ${{ steps.get-ips.outputs.order-ip }}
@@ -160,7 +160,7 @@ jobs:
       - name: Set Kubernetes context
         run: |
           # Use environment-specific cluster names
-          if [[ "${{ env.ENVIRONMENT }}" == "production" ]]; then
+          if [[ "${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}" == "production" ]]; then
             AKS_CLUSTER="${{ secrets.PROD_AKS_CLUSTER }}"
             RESOURCE_GROUP="${{ secrets.PROD_RESOURCE_GROUP }}"
           else
@@ -178,8 +178,8 @@ jobs:
 
       - name: Deploy Backend Infrastructure
         run: |
-          echo "Deploying backend infrastructure to ${{ env.ENVIRONMENT }}..."
-          cd k8s/${{ env.ENVIRONMENT }}/
+          echo "Deploying backend infrastructure to ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}..."
+          cd k8s/${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}/
           kubectl apply -f configmaps.yaml
           kubectl apply -f secrets.yaml
           kubectl apply -f product-db.yaml
@@ -187,8 +187,8 @@ jobs:
 
       - name: Deploy Backend Microservices
         run: |
-          echo "Deploying backend microservices to ${{ env.ENVIRONMENT }}..."
-          cd k8s/${{ env.ENVIRONMENT }}/
+          echo "Deploying backend microservices to ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}..."
+          cd k8s/${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}/
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
 
