@@ -32,10 +32,11 @@ on:
 
 # Define global environment variables
 env:
-  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
   IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
   # Determine environment based on branch or input
   ENVIRONMENT: ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
+  # Set ACR based on environment
+  ACR_LOGIN_SERVER: ${{ inputs.environment == 'production' && secrets.PROD_AZURE_CONTAINER_REGISTRY || secrets.DEV_AZURE_CONTAINER_REGISTRY }}
 
 jobs:
   # CI Stage - Always runs for both push and PR
