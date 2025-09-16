@@ -1,0 +1,60 @@
+name: CI/CD Pipeline
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ACR
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and Push Images
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/product_service:${{ github.sha }} ./backend/product_service
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/order_service:${{ github.sha }} ./backend/order_service
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ github.sha }} ./frontend
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/product_service:${{ github.sha }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/order_service:${{ github.sha }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ github.sha }}
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Set up AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
+
+      - name: Create Kubernetes Secrets
+        run: |
+          kubectl create secret generic ecomm-secrets --from-literal=POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
+            --from-literal=POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
+            --from-literal=AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} \
+            --from-literal=AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy to AKS
+        run: kubectl apply -f week08/k8s/
