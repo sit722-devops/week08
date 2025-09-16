@@ -4,9 +4,6 @@ on:
   workflow_call: {}                     # called by the orchestrator
   pull_request:                         # PR checks (no push)
     branches: [ main, dev, develop ]
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend_ci.yml'
 
 env:
   ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
@@ -19,7 +16,7 @@ jobs:
 
       # PRs: verify it builds, but don't push
       - name: Build Frontend (PR check only)
-        if: ${{ github.event_name == 'pull' }}
+        if: ${{ github.event_name == 'pull_request' }}
         run: docker build -t frontend-ci-check ./frontend/
 
       # Orchestrated main: build & push :latest (and :SHORT_SHA)

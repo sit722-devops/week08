@@ -4,9 +4,6 @@ on:
   workflow_call: {}                     # called by the orchestrator
   pull_request:                         # PR checks (no push)
     branches: [ main, dev, develop ]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend_ci.yml'
 
 env:
   # e.g. deakinacr.azurecr.io (set as repo/env secret)
