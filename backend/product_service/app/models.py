@@ -20,4 +20,8 @@ class Product(Base):
 
     def __repr__(self):
         # A helpful representation when debugging
-        return f"<Product(id={self.product_id}, name='{self.name}', stock={self.stock_quantity}, image_url='{self.image_url[:30] if self.image_url else 'None'}...')>"
+        image_preview = self.image_url[:30] if self.image_url else "None"
+        return (
+            f"<Product(id={self.product_id}, name='{self.name}', "
+            f"stock={self.stock_quantity}, image_url='{image_preview}...')>"
+        )

@@ -145,7 +145,11 @@ async def create_product(product: ProductCreate, db: Session = Depends(get_db)):
         db.add(db_product)
         db.commit()
         db.refresh(db_product)
-        logger.info("Product Service: Product '%s' (ID: %s) created successfully.", db_product.name, db_product.product_id)
+        logger.info(
+            "Product Service: Product '%s' (ID: %s) created successfully.",
+            db_product.name,
+            db_product.product_id,
+        )
         return db_product
     except Exception as e:
         db.rollback()
