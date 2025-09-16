@@ -1,5 +1,15 @@
-# week08/k8s/frontend.yaml
+# k8s/frontend.yaml
 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+data:
+  # These are the internal Kubernetes DNS names for your backend services.
+  # This allows the frontend to communicate with the backend inside the cluster.
+  PRODUCT_API_URL: "http://product-service-w08e1:8000"
+  ORDER_API_URL: "http://order-service-w08e1:8001"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,16 +28,20 @@ spec:
     spec:
       containers:
       - name: frontend-container
-        # This is the correct image from your branch
+        # The image tag will be updated by the CD pipeline using 'kubectl set image'
         image: sit722acrvincent.azurecr.io/frontend:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 80
+        # This section injects the values from the ConfigMap as environment variables
+        envFrom:
+        - configMapRef:
+            name: frontend-config
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-w08e1 # Service name matches
+  name: frontend-w08e1
   labels:
     app: frontend
 spec:
@@ -35,6 +49,6 @@ spec:
     app: frontend
   ports:
     - protocol: TCP
-      port: 80 # The port the service listens on inside the cluster
-      targetPort: 80 # The port on the Pod (containerPort where Nginx runs)
-  type: LoadBalancer # Exposes the service on a port on each Node's IP
+      port: 80
+      targetPort: 80
+  type: LoadBalancer
