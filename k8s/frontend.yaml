@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
       - name: frontend-container
-        # The image tag will be updated by the CD pipeline using 'kubectl set image'
+        # The image tag will be updated by CD pipeline using 
         image: sit722acrvincent.azurecr.io/frontend:latest
         imagePullPolicy: Always
         ports:
