@@ -143,6 +143,16 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Harden Azure CLI (avoid invalid api-version)
+        run: |
+          # Do NOT auto-install preview extensions during the run
+          az config set extension.use_dynamic_install=no
+          # Remove aks-preview if present (it can force newer api-versions)
+          az extension remove -n aks-preview || true
+          # Diagnostics (optional)
+          az version
+          az extension list -o table || true
+
       - name: Set AKS context
         run: |
           az aks get-credentials \
