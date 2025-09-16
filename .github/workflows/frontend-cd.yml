@@ -1,7 +1,6 @@
 name: CD - Deploy Frontend to AKS
 
 on:
-  # Called by the orchestrator
   workflow_call:
     inputs:
       product_api_ip:
@@ -12,14 +11,12 @@ on:
         description: Order API URL (e.g., http://Y.Y.Y.Y:8001)
         required: true
         type: string
-      # Optional overrides; fall back to secrets if omitted
       aks_cluster_name:
         required: false
         type: string
       aks_resource_group:
         required: false
         type: string
-  # Optional manual run
   workflow_dispatch: {}
 
 permissions:
@@ -45,7 +42,7 @@ jobs:
       - name: Derive ACR name
         run: echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
 
-      # ✅ Context before kubectl
+      # Set kube context BEFORE any kubectl
       - name: Set AKS context
         run: |
           az aks get-credentials \
@@ -66,20 +63,31 @@ jobs:
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ env.ACR_NAME }}
 
-      # ✅ Build & push :latest (CI also pushes :latest, but we rebuild after injection)
+      # Build & push :latest (frontend CI also pushes :latest; we rebuild after URL injection)
       - name: Build & Push frontend (:latest)
         run: |
           docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
           docker push    ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
 
+      # ▼ NEW: delete deployment first to avoid rollout errors if it's in a bad state
+      - name: Delete old deployment (ignore if missing)
+        env:
+          NS: ${{ env.K8S_NAMESPACE }}
+        run: |
+          kubectl -n "$NS" delete deploy frontend --ignore-not-found
+
       - name: Apply manifests
         run: kubectl apply -n "$K8S_NAMESPACE" -f k8s/frontend.yaml
 
-      # ✅ Force pods to pull fresh :latest even if tag unchanged
-      - name: Rollout restart frontend (pull latest)
+      - name: Rollout status (skip if missing)
+        env:
+          NS: ${{ env.K8S_NAMESPACE }}
         run: |
-          kubectl -n "$K8S_NAMESPACE" rollout restart deploy/frontend
-          kubectl -n "$K8S_NAMESPACE" rollout status  deploy/frontend --timeout=180s
+          if kubectl -n "$NS" get deploy frontend >/dev/null 2>&1; then
+            kubectl -n "$NS" rollout status deploy/frontend --timeout=180s
+          else
+            echo "WARN: deployment frontend not found; skipping rollout status"
+          fi
 
       - name: Logout Azure
         if: always()

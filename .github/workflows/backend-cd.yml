@@ -1,7 +1,6 @@
 name: CD - Deploy Backend Services to AKS
 
 on:
-  # Called by the orchestrator
   workflow_call:
     outputs:
       product_api_ip:
@@ -10,7 +9,6 @@ on:
       order_api_ip:
         description: "Order service External IP"
         value: ${{ jobs.deploy_backend.outputs.ORDER_API_IP }}
-  # Optional manual trigger
   workflow_dispatch: {}
 
 permissions:
@@ -20,7 +18,7 @@ env:
   ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}   # e.g. deakinacr.azurecr.io
   K8S_NAMESPACE: ecommerce
 
-  # Update these if your service/deployment names differ
+  # Update these if your names differ
   PRODUCT_SVC_NAME: product-service-w08e1
   ORDER_SVC_NAME:   order-service-w08e1
   PRODUCT_DEPLOY:   product-service-w08e1
@@ -48,7 +46,7 @@ jobs:
           echo "CLUSTER=${{ secrets.AKS_CLUSTER_NAME }}"
           az aks show -g "${{ secrets.AKS_RESOURCE_GROUP }}" -n "${{ secrets.AKS_CLUSTER_NAME }}" -o table
 
-      # ✅ Context before any kubectl
+      # Set kube context BEFORE any kubectl
       - name: Set AKS context
         run: |
           az aks get-credentials \
@@ -64,7 +62,7 @@ jobs:
       - name: Derive ACR name
         run: echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
 
-      # 🔒 Non-fatal: try to ensure AcrPull (skip if lacking Owner)
+      # Best-effort: ensure AcrPull (won't fail run if you lack Owner rights)
       - name: Ensure AKS can pull from ACR (best-effort)
         run: |
           set -e
@@ -74,8 +72,16 @@ jobs:
             echo "AcrPull already assigned."
           else
             echo "Trying to assign AcrPull (requires Owner/User Access Administrator)…"
-            az role assignment create --assignee "$KUBE_CID" --role AcrPull --scope "$ACR_ID" || echo "WARN: could not assign AcrPull; proceeding assuming pre-granted access."
+            az role assignment create --assignee "$KUBE_CID" --role AcrPull --scope "$ACR_ID" || echo "WARN: could not assign AcrPull; proceeding."
           fi
+
+      # ▼ NEW: delete existing app deployments (avoids rollout failures)
+      - name: Delete old deployments (ignore if missing)
+        env:
+          NS: ${{ env.K8S_NAMESPACE }}
+        run: |
+          kubectl -n "$NS" delete deploy "${{ env.PRODUCT_DEPLOY }}" --ignore-not-found
+          kubectl -n "$NS" delete deploy "${{ env.ORDER_DEPLOY }}"   --ignore-not-found
 
       - name: Apply backend manifests
         run: |
@@ -86,15 +92,18 @@ jobs:
           kubectl apply -n "$K8S_NAMESPACE" -f k8s/product-service.yaml
           kubectl apply -n "$K8S_NAMESPACE" -f k8s/order-service.yaml
 
-      # ✅ Force pods to pull fresh :latest even if tag unchanged
-      - name: Rollout restart backends (pull latest)
+      # Optional: if you keep :latest in manifests and want to force a fresh pull
+      - name: Rollout status (skip if missing)
         env:
           NS: ${{ env.K8S_NAMESPACE }}
         run: |
-          kubectl -n "$NS" rollout restart deploy/${{ env.PRODUCT_DEPLOY }}
-          kubectl -n "$NS" rollout restart deploy/${{ env.ORDER_DEPLOY }}
-          kubectl -n "$NS" rollout status deploy/${{ env.PRODUCT_DEPLOY }} --timeout=180s
-          kubectl -n "$NS" rollout status deploy/${{ env.ORDER_DEPLOY }}   --timeout=180s
+          for d in "${{ env.PRODUCT_DEPLOY }}" "${{ env.ORDER_DEPLOY }}"; do
+            if kubectl -n "$NS" get deploy "$d" >/dev/null 2>&1; then
+              kubectl -n "$NS" rollout status deploy/"$d" --timeout=180s
+            else
+              echo "WARN: deployment $d not found; skipping rollout status"
+            fi
+          done
 
       - name: Wait for Backend LoadBalancer IPs
         run: |

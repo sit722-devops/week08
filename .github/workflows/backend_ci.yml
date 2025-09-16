@@ -80,6 +80,8 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         run: pytest tests --maxfail=1 --disable-warnings -q
+      - name: Show event name
+        run: echo "event=${{ github.event_name }}"
 
   build_and_push_images:
     runs-on: ubuntu-latest
