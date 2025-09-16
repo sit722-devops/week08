@@ -41,7 +41,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-results
-          path: backend/test-results || backend/junit.xml
+          path: |
+            backend/test-results/**
 
   frontend:
     name: Frontend: install, build, test
