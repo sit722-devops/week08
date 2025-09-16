@@ -1,0 +1,245 @@
+# week08/.github/workflows/frontend-pipeline.yml
+
+name: Frontend CI/CD Pipeline
+
+on:
+  # Trigger on pushes to main and develop branches
+  push:
+    branches: [main, develop]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-pipeline.yml"
+
+  # Trigger on pull requests to main and develop branches
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-pipeline.yml"
+
+  # Allow this workflow to be called by other workflows
+  workflow_call:
+    inputs:
+      product-ip:
+        required: true
+        type: string
+      order-ip:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+
+# Define global environment variables
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+  # Determine environment based on branch or input
+  ENVIRONMENT: ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
+
+jobs:
+  # CI Stage - Always runs for both push and PR
+  test-and-build:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.build.outputs.image-tag }}
+      should-deploy: ${{ steps.decision.outputs.should-deploy }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Frontend Files
+        run: |
+          echo "Validating frontend files..."
+          # Check if main.js exists and has required structure
+          if [ ! -f "frontend/main.js" ]; then
+            echo "Error: frontend/main.js not found"
+            exit 1
+          fi
+
+          # Check if nginx.conf exists
+          if [ ! -f "frontend/nginx.conf" ]; then
+            echo "Error: frontend/nginx.conf not found"
+            exit 1
+          fi
+
+          # Check if index.html exists
+          if [ ! -f "frontend/index.html" ]; then
+            echo "Error: frontend/index.html not found"
+            exit 1
+          fi
+
+          echo "Frontend validation passed"
+
+      - name: Build and Push Image
+        id: build
+        if: github.event_name == 'push'
+        run: |
+          # Azure login
+          az login --service-principal --username ${{ secrets.AZURE_CLIENT_ID }} --password ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+          az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+
+          # Build and push with environment-specific tags
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }} ./frontend/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }}
+
+          # Also push latest tag for the target environment
+          docker tag ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }} ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
+
+          echo "image-tag=${{ env.IMAGE_TAG }}" >> $GITHUB_OUTPUT
+
+          # Logout from Azure
+          az logout
+
+      - name: Deployment Decision
+        id: decision
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && ("${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/develop") ]]; then
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "workflow_call" ]]; then
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+  # CD Stage - Runs on push to main/develop or when called by other workflow
+  deploy-frontend:
+    needs: test-and-build
+    if: needs.test-and-build.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ env.ENVIRONMENT }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get Backend Service IPs
+        id: get-backend-ips
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_call" ]]; then
+            # Use IPs passed from calling workflow
+            echo "product-ip=${{ inputs.product-ip }}" >> $GITHUB_OUTPUT
+            echo "order-ip=${{ inputs.order-ip }}" >> $GITHUB_OUTPUT
+            echo "Using IPs from calling workflow: Product=${{ inputs.product-ip }}, Order=${{ inputs.order-ip }}"
+          else
+            # Query AKS for existing service IPs
+            echo "Querying AKS for existing service IPs..."
+            
+            # Azure login
+            az login --service-principal --username ${{ secrets.AZURE_CLIENT_ID }} --password ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+            
+            # Set Kubernetes context
+            if [[ "${{ env.ENVIRONMENT }}" == "production" ]]; then
+              AKS_CLUSTER="${{ secrets.PROD_AKS_CLUSTER }}"
+              RESOURCE_GROUP="${{ secrets.PROD_RESOURCE_GROUP }}"
+            else
+              AKS_CLUSTER="${{ secrets.DEV_AKS_CLUSTER }}"
+              RESOURCE_GROUP="${{ secrets.DEV_RESOURCE_GROUP }}"
+            fi
+            
+            az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_CLUSTER --overwrite-existing
+            
+            # Get service IPs
+            PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            
+            if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
+              echo "Error: Backend service IPs not found in AKS cluster"
+              exit 1
+            fi
+            
+            echo "product-ip=$PRODUCT_IP" >> $GITHUB_OUTPUT
+            echo "order-ip=$ORDER_IP" >> $GITHUB_OUTPUT
+            echo "Found IPs: Product=$PRODUCT_IP, Order=$ORDER_IP"
+            
+            # Logout from Azure
+            az logout
+          fi
+
+      - name: Inject Backend IPs into Frontend
+        run: |
+          echo "Injecting backend IPs into frontend configuration..."
+
+          PRODUCT_IP="${{ steps.get-backend-ips.outputs.product-ip }}"
+          ORDER_IP="${{ steps.get-backend-ips.outputs.order-ip }}"
+
+          # Validate IPs
+          if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
+            echo "Error: Backend service IPs not available"
+            exit 1
+          fi
+
+          # Create backup of original main.js
+          cp frontend/main.js frontend/main.js.backup
+
+          # Inject IPs with proper URL formatting
+          sed -i "s|_PRODUCT_API_URL_|http://${PRODUCT_IP}:8000|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|http://${ORDER_IP}:8001|g" frontend/main.js
+
+          # If placeholders weren't found, replace existing hardcoded IPs
+          if ! grep -q "_PRODUCT_API_URL_\|_ORDER_API_URL_" frontend/main.js; then
+            # Replace any existing hardcoded IPs with new ones
+            sed -i "s|const PRODUCT_API_BASE_URL = 'http://[^']*';|const PRODUCT_API_BASE_URL = 'http://${PRODUCT_IP}:8000/';|g" frontend/main.js
+            sed -i "s|const ORDER_API_BASE_URL = 'http://[^']*';|const ORDER_API_BASE_URL = 'http://${ORDER_IP}:8001/';|g" frontend/main.js
+          fi
+
+          # Display the modified file content for debugging
+          echo "--- Modified main.js content ---"
+          cat frontend/main.js
+          echo "---------------------------------"
+
+      - name: Build and Push Frontend Image with Injected IPs
+        run: |
+          # Azure login
+          az login --service-principal --username ${{ secrets.AZURE_CLIENT_ID }} --password ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+          az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+
+          # Build and push frontend image with injected configuration
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }} ./frontend/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }}
+
+          # Also push latest tag
+          docker tag ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }} ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
+
+          # Logout from Azure
+          az logout
+
+      - name: Deploy Frontend to AKS
+        run: |
+          echo "Deploying frontend to ${{ env.ENVIRONMENT }} environment..."
+
+          # Azure login
+          az login --service-principal --username ${{ secrets.AZURE_CLIENT_ID }} --password ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+
+          # Set Kubernetes context
+          if [[ "${{ env.ENVIRONMENT }}" == "production" ]]; then
+            AKS_CLUSTER="${{ secrets.PROD_AKS_CLUSTER }}"
+            RESOURCE_GROUP="${{ secrets.PROD_RESOURCE_GROUP }}"
+          else
+            AKS_CLUSTER="${{ secrets.DEV_AKS_CLUSTER }}"
+            RESOURCE_GROUP="${{ secrets.DEV_RESOURCE_GROUP }}"
+          fi
+
+          az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_CLUSTER --overwrite-existing
+
+          # Deploy frontend
+          cd k8s/${{ env.ENVIRONMENT }}/
+          kubectl apply -f frontend.yaml
+
+          # Wait for deployment to be ready
+          kubectl rollout status deployment/frontend --timeout=300s
+
+          # Logout from Azure
+          az logout
+
+      - name: Restore Original main.js
+        if: always()
+        run: |
+          # Restore original main.js from backup
+          if [ -f "frontend/main.js.backup" ]; then
+            mv frontend/main.js.backup frontend/main.js
+            echo "Restored original main.js"
+          fi

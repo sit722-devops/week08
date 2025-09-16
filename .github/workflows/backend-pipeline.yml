@@ -1,0 +1,226 @@
+# week08/.github/workflows/backend-pipeline.yml
+
+name: Backend CI/CD Pipeline
+
+on:
+  # Trigger on pushes to main and develop branches
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-pipeline.yml"
+
+  # Trigger on pull requests to main and develop branches
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-pipeline.yml"
+
+# Define global environment variables
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+  # Determine environment based on branch
+  ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
+
+jobs:
+  # CI Stage - Always runs for both push and PR
+  test-and-build:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.build.outputs.image-tag }}
+      should-deploy: ${{ steps.decision.outputs.should-deploy }}
+
+    services:
+      # Product DB container
+      product_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: products
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      # Order DB
+      order_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orders
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          for req in backend/*/requirements.txt; do
+            echo "Installing $req"
+            pip install -r "$req"
+          done
+          pip install pytest httpx
+
+      - name: Run product_service tests
+        working-directory: backend/product_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: products
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: |
+          pytest tests --maxfail=1 --disable-warnings -q
+
+      - name: Run order_service tests
+        working-directory: backend/order_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+          POSTGRES_DB: orders
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: |
+          pytest tests --maxfail=1 --disable-warnings -q
+
+      - name: Build and Push Images
+        id: build
+        if: github.event_name == 'push'
+        run: |
+          # Azure login
+          az login --service-principal --username ${{ secrets.AZURE_CLIENT_ID }} --password ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+          az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+
+          # Build and push with environment-specific tags
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }} ./backend/product_service/
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }} ./backend/order_service/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }}
+          docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }}
+
+          # Also push latest tag for the target environment
+          docker tag ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }} ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
+          docker tag ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }} ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
+          docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
+          docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
+
+          echo "image-tag=${{ env.IMAGE_TAG }}" >> $GITHUB_OUTPUT
+
+          # Logout from Azure
+          az logout
+
+      - name: Deployment Decision
+        id: decision
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && ("${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/develop") ]]; then
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+  # CD Stage - Only runs on push to main/develop after successful CI
+  deploy-backend:
+    needs: test-and-build
+    if: needs.test-and-build.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ env.ENVIRONMENT }}
+    outputs:
+      product-ip: ${{ steps.get-ips.outputs.product-ip }}
+      order-ip: ${{ steps.get-ips.outputs.order-ip }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true
+
+      - name: Set Kubernetes context
+        run: |
+          # Use environment-specific cluster names
+          if [[ "${{ env.ENVIRONMENT }}" == "production" ]]; then
+            AKS_CLUSTER="${{ secrets.PROD_AKS_CLUSTER }}"
+            RESOURCE_GROUP="${{ secrets.PROD_RESOURCE_GROUP }}"
+          else
+            AKS_CLUSTER="${{ secrets.DEV_AKS_CLUSTER }}"
+            RESOURCE_GROUP="${{ secrets.DEV_RESOURCE_GROUP }}"
+          fi
+
+          az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_CLUSTER --overwrite-existing
+          echo "AKS_CLUSTER=$AKS_CLUSTER" >> $GITHUB_ENV
+          echo "RESOURCE_GROUP=$RESOURCE_GROUP" >> $GITHUB_ENV
+
+      - name: Attach ACR
+        run: |
+          az aks update --name ${{ env.AKS_CLUSTER }} --resource-group ${{ env.RESOURCE_GROUP }} --attach-acr ${{ env.ACR_LOGIN_SERVER }}
+
+      - name: Deploy Backend Infrastructure
+        run: |
+          echo "Deploying backend infrastructure to ${{ env.ENVIRONMENT }}..."
+          cd k8s/${{ env.ENVIRONMENT }}/
+          kubectl apply -f configmaps.yaml
+          kubectl apply -f secrets.yaml
+          kubectl apply -f product-db.yaml
+          kubectl apply -f order-db.yaml
+
+      - name: Deploy Backend Microservices
+        run: |
+          echo "Deploying backend microservices to ${{ env.ENVIRONMENT }}..."
+          cd k8s/${{ env.ENVIRONMENT }}/
+          kubectl apply -f product-service.yaml
+          kubectl apply -f order-service.yaml
+
+      - name: Wait for LoadBalancer IPs
+        id: get-ips
+        run: |
+          echo "Waiting for LoadBalancer IPs to be assigned (up to 5 minutes)..."
+          PRODUCT_IP=""
+          ORDER_IP=""
+
+          for i in $(seq 1 60); do
+            echo "Attempt $i/60 to get IPs..."
+            PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+
+            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
+              echo "All LoadBalancer IPs assigned!"
+              echo "Product Service IP: $PRODUCT_IP"
+              echo "Order Service IP: $ORDER_IP"
+              break
+            fi
+            sleep 5
+          done
+
+          if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
+            echo "Error: LoadBalancer IPs not assigned after timeout."
+            exit 1
+          fi
+
+          echo "product-ip=$PRODUCT_IP" >> $GITHUB_OUTPUT
+          echo "order-ip=$ORDER_IP" >> $GITHUB_OUTPUT
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()

@@ -1,4 +1,4 @@
-# week08/k8s/frontend.yaml
+# week08/k8s/dev/frontend.yaml
 
 apiVersion: apps/v1
 kind: Deployment
@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: frontend-container
-          image: eunjikim.azurecr.io/frontend:latest
+          image: eunjidevacr.azurecr.io/frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80
@@ -26,7 +26,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-w08e1 # Service name matches
+  name: frontend-w08e1
   labels:
     app: frontend
 spec:
@@ -34,6 +34,6 @@ spec:
     app: frontend
   ports:
     - protocol: TCP
-      port: 80 # The port the service listens on inside the cluster
-      targetPort: 80 # The port on the Pod (containerPort where Nginx runs)
-  type: LoadBalancer # Exposes the service on a port on each Node's IP
+      port: 80
+      targetPort: 80
+  type: LoadBalancer
