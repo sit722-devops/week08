@@ -28,10 +28,14 @@ jobs:
       - name: ACR login
         run: az acr login -n "${{ env.ACR_NAME }}"
 
-      - name: Build & push frontend (latest)
+            - name: Build & push frontend (SHA + latest)
         run: |
-          docker build -t $REGISTRY_SERVER/frontend:latest ./frontend
-          docker push  $REGISTRY_SERVER/frontend:latest
+          # REGISTRY_SERVER is set earlier to "<ACR_NAME>.azurecr.io"
+          docker build -t $REGISTRY_SERVER/frontend:${GITHUB_SHA} ./frontend
+          docker tag    $REGISTRY_SERVER/frontend:${GITHUB_SHA} $REGISTRY_SERVER/frontend:latest
+          docker push   $REGISTRY_SERVER/frontend:${GITHUB_SHA}
+          docker push   $REGISTRY_SERVER/frontend:latest
+
 
       - name: Logout Azure
         if: always()
