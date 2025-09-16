@@ -1,25 +1,20 @@
-name: Backend CI - Test, Build and Push Images to ACR
+name: Backend CI — test, build & push (ACR)
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, development ]
+    branches: [ main, task/9.2c ]
     paths:
-      - 'backend/**'
-      - '.github/workflows/backend_ci.yml'
-  pull_request:
-    branches: [ main, development ]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend_ci.yml'
+      - "backend/**"
+      - ".github/workflows/backend_ci.yml"
 
 env:
-  # e.g. sit722w08acr1234.azurecr.io — set as a repo secret
-  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+  ACR_NAME: ${{ secrets.ACR_NAME }}              # <— ACR registry NAME (no .azurecr.io)
 
 jobs:
-  test_and_lint_backends:
+  test_and_build:
     runs-on: ubuntu-latest
+
     services:
       product_db:
         image: postgres:15
@@ -27,12 +22,10 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: products
+        ports: [ "5432:5432" ]
         options: >-
           --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports: [ "5432:5432" ]
+          --health-interval 10s --health-timeout 5s --health-retries 5
 
       order_db:
         image: postgres:15
@@ -40,31 +33,28 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: orders
+        ports: [ "5433:5432" ]
         options: >-
           --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports: [ "5433:5432" ]
+          --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python 3.10 (with pip cache)
+      - name: Set REGISTRY_SERVER env
+        run: echo "REGISTRY_SERVER=${{ env.ACR_NAME }}.azurecr.io" >> $GITHUB_ENV
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: "3.10"
 
-      - name: Install deps
+      - name: Install deps (all backends)
         run: |
-          pip install --upgrade pip
+          pip install --upgrade pip pytest httpx
           for req in backend/*/requirements.txt; do
-            echo "Installing $req"
-            pip install -r "$req"
+            echo "Installing $req"; pip install -r "$req";
           done
-          pip install pytest httpx
 
       - name: Test product_service
         working-directory: backend/product_service
@@ -74,7 +64,7 @@ jobs:
           POSTGRES_DB: products
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-        run: pytest tests --maxfail=1 --disable-warnings -q
+        run: pytest -q
 
       - name: Test order_service
         working-directory: backend/order_service
@@ -84,39 +74,34 @@ jobs:
           POSTGRES_DB: orders
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-        run: pytest tests --maxfail=1 --disable-warnings -q
+        run: pytest -q
 
-  build_and_push_images:
-    runs-on: ubuntu-latest
-    needs: test_and_lint_backends
-    # Don't push images on PRs
-    if: ${{ github.event_name != 'pull_request' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Azure Login (OIDC or SP JSON)
+      # Build & push only on non-PR pushes
+      - name: Azure Login
+        if: github.event_name == 'push'
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.ACR_NAME }}
+      - name: ACR login (name, not FQDN)
+        if: github.event_name == 'push'
+        run: az acr login -n "${{ env.ACR_NAME }}"
 
-      - name: Build & Push Product Service (SHA + latest)
+      - name: Build & push product_service (SHA + latest)
+        if: github.event_name == 'push'
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ github.sha }} ./backend/product_service/
-          docker tag    ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ github.sha }} ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
-          docker push   ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ github.sha }}
-          docker push   ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
+          docker build -t $REGISTRY_SERVER/product_service:${GITHUB_SHA} ./backend/product_service
+          docker tag   $REGISTRY_SERVER/product_service:${GITHUB_SHA} $REGISTRY_SERVER/product_service:latest
+          docker push  $REGISTRY_SERVER/product_service:${GITHUB_SHA}
+          docker push  $REGISTRY_SERVER/product_service:latest
 
-      - name: Build & Push Order Service (SHA + latest)
+      - name: Build & push order_service (SHA + latest)
+        if: github.event_name == 'push'
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ github.sha }} ./backend/order_service/
-          docker tag    ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ github.sha }} ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
-          docker push   ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ github.sha }}
-          docker push   ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
+          docker build -t $REGISTRY_SERVER/order_service:${GITHUB_SHA} ./backend/order_service
+          docker tag   $REGISTRY_SERVER/order_service:${GITHUB_SHA} $REGISTRY_SERVER/order_service:latest
+          docker push  $REGISTRY_SERVER/order_service:${GITHUB_SHA}
+          docker push  $REGISTRY_SERVER/order_service:latest
 
       - name: Logout Azure
         if: always()
