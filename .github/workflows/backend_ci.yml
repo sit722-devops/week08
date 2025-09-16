@@ -2,7 +2,7 @@ name: Backend CI - Test, Build and Push Images to ACR
 
 on:
   workflow_call: {}                     # called by the orchestrator
-  pull_request:                         # PR checks (no image push)
+  pull_request:                         # PR checks (no push)
     branches: [ main, dev, develop ]
     paths:
       - 'backend/**'
@@ -104,14 +104,24 @@ jobs:
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ env.ACR_NAME }}
 
-      - name: Build & Push product_service (:SHORT_SHA)
+      # NEW: tag and push :latest (and keep :SHORT_SHA)
+      - name: Build & Push product_service (:latest and :SHORT_SHA)
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:${SHORT_SHA} ./backend/product_service/
+          docker build \
+            -t ${{ env.ACR_LOGIN_SERVER }}/product_service:latest \
+            -t ${{ env.ACR_LOGIN_SERVER }}/product_service:${SHORT_SHA} \
+            ./backend/product_service/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
           docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:${SHORT_SHA}
 
-      - name: Build & Push order_service (:SHORT_SHA)
+      # NEW: tag and push :latest (and keep :SHORT_SHA)
+      - name: Build & Push order_service (:latest and :SHORT_SHA)
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:${SHORT_SHA} ./backend/order_service/
+          docker build \
+            -t ${{ env.ACR_LOGIN_SERVER }}/order_service:latest \
+            -t ${{ env.ACR_LOGIN_SERVER }}/order_service:${SHORT_SHA} \
+            ./backend/order_service/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
           docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:${SHORT_SHA}
 
       - name: Logout Azure

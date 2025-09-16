@@ -2,7 +2,7 @@ name: Frontend CI - Build & Push Image
 
 on:
   workflow_call: {}                     # called by the orchestrator
-  pull_request:                         # PR checks (no image push)
+  pull_request:                         # PR checks (no push)
     branches: [ main, dev, develop ]
     paths:
       - 'frontend/**'
@@ -22,7 +22,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         run: docker build -t frontend-ci-check ./frontend/
 
-      # Orchestrated main: build & push with SHA
+      # Orchestrated main: build & push :latest (and :SHORT_SHA)
       - name: Azure Login
         if: ${{ github.event_name == 'workflow_call' }}
         uses: azure/login@v1
@@ -39,10 +39,15 @@ jobs:
         if: ${{ github.event_name == 'workflow_call' }}
         run: az acr login --name ${{ env.ACR_NAME }}
 
-      - name: Build & Push frontend (:SHORT_SHA)
+      # NEW: tag and push :latest (and keep :SHORT_SHA)
+      - name: Build & Push frontend (:latest and :SHORT_SHA)
         if: ${{ github.event_name == 'workflow_call' }}
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA} ./frontend/
+          docker build \
+            -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest \
+            -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA} \
+            ./frontend/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
           docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA}
 
       - name: Logout Azure

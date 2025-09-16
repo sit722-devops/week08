@@ -1,6 +1,7 @@
 name: CD - Deploy Frontend to AKS
 
 on:
+  # Called by the orchestrator
   workflow_call:
     inputs:
       product_api_ip:
@@ -11,14 +12,14 @@ on:
         description: Order API URL (e.g., http://Y.Y.Y.Y:8001)
         required: true
         type: string
-      # Optional inputs; defaults to Environment/Repo secrets if omitted
+      # Optional overrides; fall back to secrets if omitted
       aks_cluster_name:
         required: false
         type: string
       aks_resource_group:
         required: false
         type: string
-  # Optional manual trigger
+  # Optional manual run
   workflow_dispatch: {}
 
 permissions:
@@ -32,17 +33,26 @@ jobs:
   deploy_frontend:
     runs-on: ubuntu-latest
     environment: Production
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: azure/login@v1
+      - name: Azure Login
+        uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Derive ACR name and SHORT_SHA
+      - name: Derive ACR name
+        run: echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
+
+      # ✅ Context before kubectl
+      - name: Set AKS context
         run: |
-          echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
-          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          az aks get-credentials \
+            --resource-group "${{ inputs.aks_resource_group || secrets.AKS_RESOURCE_GROUP }}" \
+            --name          "${{ inputs.aks_cluster_name   || secrets.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
+          kubectl cluster-info
 
       - name: Ensure namespace exists
         run: |
@@ -56,24 +66,20 @@ jobs:
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ env.ACR_NAME }}
 
-      - name: Build & Push frontend (:SHORT_SHA only)
+      # ✅ Build & push :latest (CI also pushes :latest, but we rebuild after injection)
+      - name: Build & Push frontend (:latest)
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA} ./frontend/
-          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA}
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
+          docker push    ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
 
-      - name: Set AKS context
-        run: |
-          az aks get-credentials \
-            --resource-group "${{ inputs.aks_resource_group || secrets.AKS_RESOURCE_GROUP }}" \
-            --name "${{ inputs.aks_cluster_name   || secrets.AKS_CLUSTER_NAME }}" \
-            --overwrite-existing
+      - name: Apply manifests
+        run: kubectl apply -n "$K8S_NAMESPACE" -f k8s/frontend.yaml
 
-      - name: Apply manifests and pin image to SHA tag
+      # ✅ Force pods to pull fresh :latest even if tag unchanged
+      - name: Rollout restart frontend (pull latest)
         run: |
-          kubectl apply -n "$K8S_NAMESPACE" -f k8s/frontend.yaml
-          kubectl set image -n "$K8S_NAMESPACE" deploy/frontend \
-            frontend=${ACR_LOGIN_SERVER}/frontend:${SHORT_SHA} --record || true
-          kubectl rollout status -n "$K8S_NAMESPACE" deploy/frontend --timeout=180s
+          kubectl -n "$K8S_NAMESPACE" rollout restart deploy/frontend
+          kubectl -n "$K8S_NAMESPACE" rollout status  deploy/frontend --timeout=180s
 
       - name: Logout Azure
         if: always()
