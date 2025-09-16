@@ -175,7 +175,9 @@ jobs:
 
       - name: Attach ACR
         run: |
-          az aks update --name ${{ env.AKS_CLUSTER }} --resource-group ${{ env.RESOURCE_GROUP }} --attach-acr ${{ env.ACR_LOGIN_SERVER }}
+          # Extract ACR name from full login server (remove .azurecr.io)
+          ACR_NAME=$(echo "${{ env.ACR_LOGIN_SERVER }}" | sed 's/\.azurecr\.io$//')
+          az aks update --name ${{ env.AKS_CLUSTER }} --resource-group ${{ env.RESOURCE_GROUP }} --attach-acr $ACR_NAME
 
       - name: Deploy Backend Infrastructure
         run: |
