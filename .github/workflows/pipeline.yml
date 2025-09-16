@@ -151,11 +151,15 @@ jobs:
             --overwrite-existing
 
       - name: Attach ACR (idempotent)
+        env:
+          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
         run: |
+          # Derive registry name (e.g., 'eunjikim' from 'eunjikim.azurecr.io')
+          ACR_NAME="$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)"
           az aks update \
             --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
             --name "${{ secrets.AKS_CLUSTER_NAME }}" \
-            --attach-acr "${{ env.ACR_LOGIN_SERVER%%.* }}"
+            --attach-acr "$ACR_NAME"
 
       - name: Render K8s manifests with new tags
         run: |

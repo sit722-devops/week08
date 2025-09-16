@@ -60,7 +60,11 @@ jobs:
           echo "sha_tag=$SHORT" >> $GITHUB_OUTPUT
 
       - name: Login ACR
-        run: az acr login --name "${{ secrets.ACR_LOGIN_SERVER }}"
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          ACR_NAME="$(echo "$ACR_LOGIN_SERVER" | cut -d. -f1)"
+          az acr login --name "$ACR_NAME"
 
       - name: Build & Push — product_service
         run: |
