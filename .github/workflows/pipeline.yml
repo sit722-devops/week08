@@ -1,0 +1,226 @@
+name: CI/CD — Monorepo (Backend + Frontend) to AKS
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'k8s/**'
+      - '.github/workflows/**'
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'k8s/**'
+      - '.github/workflows/**'
+  workflow_dispatch: {}
+
+# Cancel older in-flight runs for the same branch
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Set once and reused. ACR login server is like eunjikim.azurecr.io
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+
+jobs:
+  # ---------- CI: test backends (with DB services), lint, etc. ----------
+  test_backends:
+    name: CI — Test Backends
+    runs-on: ubuntu-latest
+
+    services:
+      product_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: products
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      order_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orders
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5433:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install deps (all backends) + CI tools
+        run: |
+          pip install --upgrade pip
+          for req in backend/*/requirements.txt; do
+            echo "Installing $req"
+            pip install -r "$req"
+          done
+          pip install pytest httpx flake8
+
+      - name: Lint (flake8)
+        run: |
+          flake8 backend
+
+      - name: Test product_service
+        working-directory: backend/product_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: products
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: pytest -q --maxfail=1 --disable-warnings
+
+      - name: Test order_service
+        working-directory: backend/order_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+          POSTGRES_DB: orders
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: pytest -q --maxfail=1 --disable-warnings
+
+  # ---------- CI: build & push images (reusable), only on push (not PR) ----------
+  build_and_push:
+    name: CI — Build & Push Images
+    needs: [test_backends]
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/build_reusable.yml
+    with:
+      ref: ${{ github.sha }}
+      branch: ${{ github.ref_name }}
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+
+  # ---------- CD: Deploy to AKS automatically ----------
+  deploy:
+    name: CD — Deploy to AKS
+    needs: [build_and_push]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    # Map branch → environment
+    # main -> prod, others -> dev
+    environment: ${{ startsWith(github.ref, 'refs/heads/main') && 'prod' || 'dev' }}
+
+    env:
+      # Tag strategy emitted by reusable build: branch-latest + sha
+      BACKEND_PRODUCT_TAG: ${{ needs.build_and_push.outputs.product_tag }}
+      BACKEND_ORDER_TAG:   ${{ needs.build_and_push.outputs.order_tag }}
+      FRONTEND_TAG:        ${{ needs.build_and_push.outputs.frontend_tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
+
+      - name: Attach ACR (idempotent)
+        run: |
+          az aks update \
+            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
+            --attach-acr "${{ env.ACR_LOGIN_SERVER%%.* }}"
+
+      - name: Render K8s manifests with new tags
+        run: |
+          echo "Using ACR: $ACR_LOGIN_SERVER"
+          echo "PRODUCT: $BACKEND_PRODUCT_TAG"
+          echo "ORDER:   $BACKEND_ORDER_TAG"
+          echo "FRONTEND:$FRONTEND_TAG"
+
+          # Patch images in-place (keeps your existing k8s/*.yaml structure)
+          sed -i "s|eunjikim.azurecr.io/product_service:latest|$ACR_LOGIN_SERVER/product_service:$BACKEND_PRODUCT_TAG|g" k8s/product-service.yaml
+          sed -i "s|eunjikim.azurecr.io/order_service:latest|$ACR_LOGIN_SERVER/order_service:$BACKEND_ORDER_TAG|g" k8s/order-service.yaml
+          sed -i "s|eunjikim.azurecr.io/frontend:latest|$ACR_LOGIN_SERVER/frontend:$FRONTEND_TAG|g" k8s/frontend.yaml
+
+      - name: Deploy (namespace by env)
+        env:
+          NAMESPACE: ${{ startsWith(github.ref, 'refs/heads/main') && 'prod' || 'dev' }}
+        run: |
+          kubectl get ns "$NAMESPACE" || kubectl create ns "$NAMESPACE"
+          kubectl -n "$NAMESPACE" apply -f k8s/configmaps.yaml
+          kubectl -n "$NAMESPACE" apply -f k8s/secrets.yaml
+          kubectl -n "$NAMESPACE" apply -f k8s/product-db.yaml
+          kubectl -n "$NAMESPACE" apply -f k8s/order-db.yaml
+          kubectl -n "$NAMESPACE" apply -f k8s/product-service.yaml
+          kubectl -n "$NAMESPACE" apply -f k8s/order-service.yaml
+          kubectl -n "$NAMESPACE" apply -f k8s/frontend.yaml
+
+      - name: Wait for LoadBalancer IPs (product & order)
+        id: waitips
+        env:
+          NAMESPACE: ${{ startsWith(github.ref, 'refs/heads/main') && 'prod' || 'dev' }}
+        run: |
+          set -e
+          echo "Waiting up to 5 min for LoadBalancer IPs..."
+          for i in $(seq 1 60); do
+            PIP=$(kubectl -n "$NAMESPACE" get svc product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || true)
+            OIP=$(kubectl -n "$NAMESPACE" get svc order-service-w08e1   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || true)
+            if [[ -n "$PIP" && -n "$OIP" ]]; then
+              echo "product_ip=$PIP" >> $GITHUB_OUTPUT
+              echo "order_ip=$OIP"   >> $GITHUB_OUTPUT
+              echo "Product IP: $PIP"
+              echo "Order IP:   $OIP"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for IPs" >&2
+          exit 1
+
+      - name: Patch frontend ConfigMap with API URLs (no source edit)
+        env:
+          NAMESPACE: ${{ startsWith(github.ref, 'refs/heads/main') && 'prod' || 'dev' }}
+          PIP: ${{ steps.waitips.outputs.product_ip }}
+          OIP: ${{ steps.waitips.outputs.order_ip }}
+        run: |
+          # Create/patch a ConfigMap the frontend reads at runtime (best practice vs rewriting JS)
+          kubectl -n "$NAMESPACE" create configmap frontend-api-urls --from-literal=PRODUCT_API_URL="http://$PIP:8000" --from-literal=ORDER_API_URL="http://$OIP:8001" -o yaml --dry-run=client | kubectl apply -f -
+
+          # Optional: rollout restart to pick up config
+          kubectl -n "$NAMESPACE" rollout restart deploy/frontend
+
+      - name: Show endpoints
+        run: |
+          echo "PRODUCT: http://${{ steps.waitips.outputs.product_ip }}:8000"
+          echo "ORDER:   http://${{ steps.waitips.outputs.order_ip }}:8001"
+
+      - name: Logout Azure
+        if: always()
+        run: az logout

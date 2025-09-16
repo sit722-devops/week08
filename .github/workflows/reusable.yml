@@ -1,0 +1,85 @@
+name: Reusable — Build & Push
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      branch:
+        required: true
+        type: string
+    secrets:
+      AZURE_CREDENTIALS:
+        required: true
+      ACR_LOGIN_SERVER:
+        required: true
+    outputs:
+      product_tag:
+        description: "Tag used for product_service"
+        value: ${{ jobs.build.outputs.product_tag }}
+      order_tag:
+        description: "Tag used for order_service"
+        value: ${{ jobs.build.outputs.order_tag }}
+      frontend_tag:
+        description: "Tag used for frontend"
+        value: ${{ jobs.build.outputs.frontend_tag }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      product_tag: ${{ steps.outvars.outputs.product_tag }}
+      order_tag:   ${{ steps.outvars.outputs.order_tag }}
+      frontend_tag: ${{ steps.outvars.outputs.frontend_tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Compute tags
+        id: outvars
+        run: |
+          # Branch-safe tag (e.g., feature-mybranch -> feature-mybranch)
+          BR="${{ inputs.branch }}"
+          SAFE="${BR//\//-}"
+          SHA="${{ inputs.ref }}"
+          SHORT="${SHA:0:12}"
+
+          # We produce two tags per image:
+          #   <branch>-latest  (moving tag for env)
+          #   <sha12>          (immutable for traceability)
+          echo "product_tag=${SAFE}-latest" >> $GITHUB_OUTPUT
+          echo "order_tag=${SAFE}-latest"   >> $GITHUB_OUTPUT
+          echo "frontend_tag=${SAFE}-latest" >> $GITHUB_OUTPUT
+
+          echo "sha_tag=$SHORT" >> $GITHUB_OUTPUT
+
+      - name: Login ACR
+        run: az acr login --name "${{ secrets.ACR_LOGIN_SERVER }}"
+
+      - name: Build & Push — product_service
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/product_service:${{ steps.outvars.outputs.product_tag }} -t ${{ secrets.ACR_LOGIN_SERVER }}/product_service:${{ steps.outvars.outputs.sha_tag }} ./backend/product_service
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/product_service:${{ steps.outvars.outputs.product_tag }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/product_service:${{ steps.outvars.outputs.sha_tag }}
+
+      - name: Build & Push — order_service
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/order_service:${{ steps.outvars.outputs.order_tag }} -t ${{ secrets.ACR_LOGIN_SERVER }}/order_service:${{ steps.outvars.outputs.sha_tag }} ./backend/order_service
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/order_service:${{ steps.outvars.outputs.order_tag }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/order_service:${{ steps.outvars.outputs.sha_tag }}
+
+      - name: Build & Push — frontend
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ steps.outvars.outputs.frontend_tag }} -t ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ steps.outvars.outputs.sha_tag }} ./frontend
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ steps.outvars.outputs.frontend_tag }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ steps.outvars.outputs.sha_tag }}
+
+      - name: Logout Azure
+        if: always()
+        run: az logout
