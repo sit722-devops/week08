@@ -110,7 +110,7 @@ jobs:
     name: CI — Build & Push Images
     needs: [test_backends]
     if: github.event_name == 'push'
-    uses: ./.github/workflows/build_reusable.yml
+    uses: ./.github/workflows/reusable.yml
     with:
       ref: ${{ github.sha }}
       branch: ${{ github.ref_name }}
