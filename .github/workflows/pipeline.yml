@@ -125,7 +125,7 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
 
-    # Map branch → environmen
+    # Map branch → environme
     # main -> prod, others -> dev
     environment: ${{ startsWith(github.ref, 'refs/heads/main') && 'prod' || 'dev' }}
 
