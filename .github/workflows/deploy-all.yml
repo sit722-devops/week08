@@ -1,7 +1,7 @@
 name: Deploy — Backend then Frontend
 
 on:
-  workflow_dispatch:   # manual trigger (Continuous Delivery)
+  workflow_dispatch:
 
 jobs:
   backend:
