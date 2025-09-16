@@ -1,93 +1,96 @@
-# week08/.github/workflows/frontend-cd.yml
-
 name: CD - Deploy Frontend to AKS
 
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
 on:
-  workflow_dispatch:
-    inputs:
-      product_api_ip:
-        description: 'External IP of Product Service'
-        required: true
-        default: 'http://<ip_address>:8000'
-      order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
-        required: true
-        default: 'http://<ip_address>:8001'
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<<resource_group_name>'
-
+  # Called automatically by backend-cd.yml
   workflow_call:
     inputs:
       product_api_ip:
+        description: Product API URL (e.g., http://X.X.X.X:8000)
         required: true
         type: string
       order_api_ip:
+        description: Order API URL (e.g., http://Y.Y.Y.Y:8001)
         required: true
         type: string
+      # Optional: keep these if backend-cd still passes them; otherwise we'll use secrets
       aks_cluster_name:
-        required: true
+        required: false
         type: string
       aks_resource_group:
-        required: true
+        required: false
         type: string
+
+  # Optional manual trigger
+  workflow_dispatch:
+    inputs:
+      product_api_ip:
+        description: 'Product API URL'
+        required: true
+        default: 'http://<ip>:8000'
+      order_api_ip:
+        description: 'Order API URL'
+        required: true
+        default: 'http://<ip>:8001'
+      aks_cluster_name:
+        description: 'AKS Cluster (leave blank to use Environment secret)'
+        required: false
+      aks_resource_group:
+        description: 'AKS RG (leave blank to use Environment secret)'
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  # From Environment secrets (Settings → Environments → Production → Secrets)
+  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}   # e.g. arulrajahacr.azurecr.io
+  K8S_NAMESPACE: ecommerce
 
 jobs:
   deploy_frontend:
     runs-on: ubuntu-latest
-    environment: Production
-
+    environment: Production   # <-- This activates Environment protection rules
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
       - name: Azure Login
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}  # store this in the Production environment
 
-      # Login to Azure Container Registry (ACR)
-      - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-
-      - name: Inject Backend IPs into Frontend main.js
+      - name: Derive ACR name and SHORT_SHA
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
+          echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Inject backend URLs into main.js
+        run: |
           sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
-          
-          # Display the modified file content for debugging
-          echo "--- Modified main.js content ---"
-          cat frontend/main.js
-          echo "---------------------------------"
+          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g"   frontend/main.js
 
-      # Build and Push Docker image for Frontend
-      - name: Build and Push Frontend Image
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build & Push frontend (:SHORT_SHA only)
         run: |
-          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
-          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA} ./frontend/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA}
 
-      - name: Set Kubernetes context (get AKS credentials)
+      - name: Set AKS context
         uses: azure/aks-set-context@v3
         with:
-          resource-group: ${{ inputs.aks_resource_group }}
-          cluster-name: ${{ inputs.aks_cluster_name }}
+          # Prefer inputs if provided, else fall back to Environment secrets
+          resource-group: ${{ inputs.aks_resource_group || secrets.AKS_RESOURCE_GROUP }}
+          cluster-name:   ${{ inputs.aks_cluster_name   || secrets.AKS_CLUSTER_NAME }}
 
-      - name: Deploy Frontend to AKS
+      - name: Apply manifests and pin image to SHA tag
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
-          cd k8s/
-          # Ensure frontend-service.yaml is configured with your ACR
-          kubectl apply -f frontend.yaml
+          kubectl apply -n "$K8S_NAMESPACE" -f k8s/frontend.yaml
+          kubectl set image -n "$K8S_NAMESPACE" deploy/frontend \
+            frontend=${ACR_LOGIN_SERVER}/frontend:${SHORT_SHA} --record || true
+          kubectl rollout status -n "$K8S_NAMESPACE" deploy/frontend --timeout=180s
 
-      - name: Logout from Azure (AKS deployment)
+      - name: Logout Azure
+        if: always()
         run: az logout

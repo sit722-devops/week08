@@ -1,53 +1,56 @@
-# week08/.github/workflows/frontend_ci.yml
-
 name: Frontend CI - Build & Push Image
 
 on:
-  # Manual trigger
   workflow_dispatch:
-
-  # Automatically on pushes to main branch
   push:
-    branches:
-      - main
-    paths: # Only trigger if changes are in the frontend directory
+    branches: [ main, dev, develop ]
+    paths:
       - 'frontend/**'
-      - '.github/workflows/frontend_ci.yml' # Trigger if this workflow file changes
+      - '.github/workflows/frontend_ci.yml'
+  pull_request:
+    branches: [ main, dev, develop ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend_ci.yml'
 
-# Define global environment variables that can be used across jobs
 env:
-  # ACR Login Server (e.g., myregistry.azurecr.io)
-  # This needs to be set as a GitHub Repository Secret
+  # e.g. arulrajahacr.azurecr.io
   ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-  # Dynamically generate image tags based on Git SHA and GitHub Run ID
-  # This provides unique, traceable tags for each image build
-  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
 
 jobs:
   build_and_push_frontend:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    # Azure login using a Service Principal secret
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      # PRs and dev/develop pushes: make sure it builds (no login, no push)
+      - name: Build Frontend (no push on PR/dev)
+        if: ${{ github.event_name == 'pull_request' || github.ref_name == 'dev' || github.ref_name == 'develop' }}
+        run: docker build -t frontend-ci-check ./frontend/
 
-    # Login to Azure Container Registry (ACR)
-    - name: Login to Azure Container Registry
-      run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+      # Only push when it's a push to main
+      - name: Azure Login
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    # Build and Push Docker image for Frontend
-    - name: Build and Push Frontend Image
-      run: |
-        docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
-        docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
+      - name: Derive ACR name and SHORT_SHA
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        run: |
+          echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-    # Logout from Azure for security (runs even if image push fails)
-    - name: Logout from Azure
-      run: az logout
-      if: always()
+      - name: Login to Azure Container Registry
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build & Push frontend (:SHORT_SHA)
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        run: |
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA} ./frontend/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${SHORT_SHA}
+
+      - name: Logout Azure
+        if: ${{ always() && github.event_name == 'push' && github.ref_name == 'main' }}
+        run: az logout
