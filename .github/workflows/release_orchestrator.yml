@@ -1,0 +1,37 @@
+name: Release (orchestrated)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1) Backend CI
+  backend_ci:
+    uses: ./.github/workflows/backend_ci.yml
+    secrets: inherit
+
+  # 2) Backend CD (needs Backend CI)
+  backend_cd:
+    needs: backend_ci
+    uses: ./.github/workflows/backend-cd.yml
+    secrets: inherit
+
+  # 3) Frontend CI (needs Backend CD)
+  frontend_ci:
+    needs: backend_cd
+    uses: ./.github/workflows/frontend_ci.yml
+    secrets: inherit
+
+  # 4) Frontend CD (needs Frontend CI + IPs from Backend CD)
+  frontend_cd:
+    needs: [backend_cd, frontend_ci]
+    uses: ./.github/workflows/frontend-cd.yml
+    with:
+      product_api_ip: http://${{ needs.backend_cd.outputs.product_api_ip }}:8000
+      order_api_ip:   http://${{ needs.backend_cd.outputs.order_api_ip }}:8001
+    secrets: inherit
