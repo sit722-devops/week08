@@ -53,14 +53,6 @@ jobs:
           echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
           echo "ACR_NAME=${ACR_LOGIN_SERVER%%.*}" >> $GITHUB_ENV
 
-      - name: Attach ACR (idempotent, non-interactive)
-        run: |
-          az aks update \
-            -g "${{ secrets.AKS_RESOURCE_GROUP }}" \
-            -n "${{ secrets.AKS_CLUSTER_NAME }}" \
-            --attach-acr "${{ env.ACR_NAME }}" \
-            --yes
-
       - name: Apply backend infra (ConfigMaps, Secrets, DBs)
         run: |
           kubectl apply -n "$K8S_NAMESPACE" -f k8s/configmaps.yaml
