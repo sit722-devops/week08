@@ -15,15 +15,18 @@ on:
         description: 'Name of ACR'
         required: true
         default: '<acr_name>'
+  workflow_call:
+    secrets:
+      AZURE_CREDENTIALS: { required: true }  # for deploy-all.yml to pass AZURE_CREDENTIALS to this workflow
 
 jobs:
   deploy_backend:
     runs-on: ubuntu-latest
-    environment: Production
+    # environment: Production
     
     outputs:
-      PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
-      ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
+      product_ip: ${{ steps.out_product.outputs.product_ip }}
+      order_ip:   ${{ steps.out_order.outputs.order_ip }}
 
     steps:
       - name: Checkout repository
@@ -59,6 +62,11 @@ jobs:
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
       
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/product-service-w08e1 --timeout=180s
+          kubectl rollout status deployment/order-service-w08e1 --timeout=180s
+      
       - name: Wait for Backend LoadBalancer IPs
         run: |
           echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
@@ -88,14 +96,12 @@ jobs:
           # And used to set the job outputs
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
           echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
-
-      - name: Capture Product Service IP for Workflow Output
-        id: get_product_ip
-        run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
       
-      - name: Capture Order Service IP for Workflow Output
-        id: get_order_ip
-        run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
+      - name: Set output - product_ip
+        id: out_product
+        run: echo "product_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
 
-      - name: Logout from Azure
-        run: az logout
+      - name: Set output - order_ip
+        id: out_order
+        run: echo "order_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
+

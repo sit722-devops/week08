@@ -1,0 +1,79 @@
+name: reusable-build — Build and Push to ACR
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        description: "Which service to build (frontend, product_service, order_service)"
+        required: true
+        type: string
+    secrets:
+      AZURE_CREDENTIALS: { required: true } # Service principal JSON
+      AZURE_CONTAINER_REGISTRY: { required: true }   # Login server, e.g: myregistry.azurecr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+      TAG_SHA: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Safe ACR login even if secret is a login server (myregistry.azurecr.io)
+      - name: Login to Azure Container Registry
+        shell: bash
+        run: |
+          REGISTRY_NAME="${ACR_LOGIN_SERVER%%.*}"   # "myregistry.azurecr.io" -> "myregistry"
+          az acr login --name "$REGISTRY_NAME"
+
+      # Build (by service)
+      - name: Build Frontend
+        if: ${{ inputs.service_name == 'frontend' }}
+        run: |
+          IMAGE="$ACR_LOGIN_SERVER/frontend"
+          docker build -t "$IMAGE:${TAG_SHA}" -t "$IMAGE:latest" ./frontend
+
+      - name: Build Product Service
+        if: ${{ inputs.service_name == 'product_service' }}
+        run: |
+          IMAGE="$ACR_LOGIN_SERVER/product_service"
+          docker build -t "$IMAGE:${TAG_SHA}" -t "$IMAGE:latest" ./backend/product_service
+
+      - name: Build Order Service
+        if: ${{ inputs.service_name == 'order_service' }}
+        run: |
+          IMAGE="$ACR_LOGIN_SERVER/order_service"
+          docker build -t "$IMAGE:${TAG_SHA}" -t "$IMAGE:latest" ./backend/order_service
+
+      # Push (by service)
+      - name: Push Frontend
+        if: ${{ inputs.service_name == 'frontend' }}
+        run: |
+          IMAGE="$ACR_LOGIN_SERVER/frontend"
+          docker push "$IMAGE:${TAG_SHA}"
+          docker push "$IMAGE:latest"
+
+      - name: Push Product Service
+        if: ${{ inputs.service_name == 'product_service' }}
+        run: |
+          IMAGE="$ACR_LOGIN_SERVER/product_service"
+          docker push "$IMAGE:${TAG_SHA}"
+          docker push "$IMAGE:latest"
+
+      - name: Push Order Service
+        if: ${{ inputs.service_name == 'order_service' }}
+        run: |
+          IMAGE="$ACR_LOGIN_SERVER/order_service"
+          docker push "$IMAGE:${TAG_SHA}"
+          docker push "$IMAGE:latest"
+
+      - name: Logout from Azure
+        if: always()
+        run: az logout

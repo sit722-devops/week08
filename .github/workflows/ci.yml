@@ -1,0 +1,105 @@
+name: CI — Backend and Frontend
+
+on:
+  push:
+    branches: [dev]  # run CI on pushes to dev
+  pull_request:
+    branches: [main] # validate PRs targeting main before merge
+
+jobs:
+  detect_changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/reusable-build.yml'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/reusable-build.yml'
+
+  test_backend:
+    needs: detect_changes
+    if: ${{ needs.detect_changes.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    services:
+      product_db:
+        image: postgres:15
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: products }
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+        ports: ["5432:5432"]
+      order_db:
+        image: postgres:15
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: orders }
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+        ports: ["5433:5432"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.10' }
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          for req in backend/*/requirements.txt; do pip install -r "$req"; done
+          pip install pytest httpx
+      - name: Test product_service
+        working-directory: backend/product_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: products
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: pytest -q
+      - name: Test order_service
+        working-directory: backend/order_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+          POSTGRES_DB: orders
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: pytest -q
+
+  build_product_service:
+    needs: [detect_changes, test_backend]
+    if: ${{ needs.detect_changes.outputs.backend == 'true' }}
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      service_name: "product_service"
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      AZURE_CONTAINER_REGISTRY: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+
+  build_order_service:
+    needs: [detect_changes, test_backend]
+    if: ${{ needs.detect_changes.outputs.backend == 'true' }}
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      service_name: "order_service"
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      AZURE_CONTAINER_REGISTRY: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+
+  build_frontend:
+    needs: detect_changes
+    if: ${{ needs.detect_changes.outputs.frontend == 'true' }}
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      service_name: "frontend"
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      AZURE_CONTAINER_REGISTRY: ${{ secrets.AZURE_CONTAINER_REGISTRY }}

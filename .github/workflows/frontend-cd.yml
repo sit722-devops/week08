@@ -22,7 +22,7 @@ on:
       aks_resource_group:
         description: 'Resource Group of the AKS Cluster'
         required: true
-        default: '<<resource_group_name>'
+        default: '<resource_group_name>'
 
   workflow_call:
     inputs:
@@ -38,11 +38,16 @@ on:
       aks_resource_group:
         required: true
         type: string
+    secrets:
+      AZURE_CREDENTIALS:
+        required: true
+      AZURE_CONTAINER_REGISTRY:
+        required: true
 
 jobs:
   deploy_frontend:
     runs-on: ubuntu-latest
-    environment: Production
+    # environment: Production
 
     steps:
       - name: Checkout repository
