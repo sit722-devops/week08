@@ -177,7 +177,15 @@ jobs:
         run: |
           # Extract ACR name from full login server (remove .azurecr.io)
           ACR_NAME=$(echo "${{ env.ACR_LOGIN_SERVER }}" | sed 's/\.azurecr\.io$//')
-          az aks update --name ${{ env.AKS_CLUSTER }} --resource-group ${{ env.RESOURCE_GROUP }} --attach-acr $ACR_NAME
+          echo "Attempting to attach ACR: $ACR_NAME"
+          # Check if ACR exists before attaching
+          if az acr show --name $ACR_NAME --resource-group ${{ env.RESOURCE_GROUP }} >/dev/null 2>&1; then
+            echo "ACR exists, attaching to AKS cluster..."
+            az aks update --name ${{ env.AKS_CLUSTER }} --resource-group ${{ env.RESOURCE_GROUP }} --attach-acr $ACR_NAME
+          else
+            echo "ACR $ACR_NAME not found in resource group ${{ env.RESOURCE_GROUP }}, skipping attachment"
+            echo "Please create ACR or check the name in GitHub Secrets"
+          fi
 
       - name: Deploy Backend Infrastructure
         run: |
