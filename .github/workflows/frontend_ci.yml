@@ -10,10 +10,15 @@ on:
   push:
     branches:
       - main
+      - development
     paths: # Only trigger if changes are in the frontend directory
       - 'frontend/**'
       - '.github/workflows/frontend_ci.yml' # Trigger if this workflow file changes
-
+  pull_request:
+    branches:
+      - main
+      - development
+      
 # Define global environment variables that can be used across jobs
 env:
   # ACR Login Server (e.g., myregistry.azurecr.io)
