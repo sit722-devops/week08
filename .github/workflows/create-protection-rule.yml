@@ -1,0 +1,25 @@
+name: Protect Main Branch
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  protect-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set branch protection for main
+        run: |
+          gh api \
+            -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/branches/main/protection \
+            -f required_status_checks.strict=true \
+            -f required_status_checks.contexts[]="Backend CI - Test, Build and Push Images to ACR" \
+            -f required_status_checks.contexts[]="Frontend CI" \
+            -f enforce_admins=true \
+            -f required_pull_request_reviews.dismiss_stale_reviews=true \
+            -f required_pull_request_reviews.required_approving_review_count=1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
