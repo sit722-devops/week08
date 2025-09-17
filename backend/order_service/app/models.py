@@ -53,4 +53,7 @@ class OrderItem(Base):
     order = relationship("Order", back_populates="items")
 
     def __repr__(self):
-        return f"<OrderItem(id={self.order_item_id}, order_id={self.order_id}, product_id={self.product_id}, qty={self.quantity})>"
+        return (
+            f"<OrderItem(id={self.order_item_id}, order_id={self.order_id}, "
+            f"product_id={self.product_id}, qty={self.quantity})>"
+        )

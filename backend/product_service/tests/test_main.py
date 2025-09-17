@@ -30,7 +30,8 @@ def setup_database_for_tests():
     for i in range(max_retries):
         try:
             logging.info(
-                f"Product Service Tests: Attempting to connect to PostgreSQL for test setup (attempt {i+1}/{max_retries})..."
+                f"Product Service Tests: Attempting to connect to PostgreSQL for test setup "
+                f"(attempt {i+1}/{max_retries})..."
             )
             # Explicitly drop all tables first to ensure a clean slate for the session
             Base.metadata.drop_all(bind=engine)
@@ -46,7 +47,8 @@ def setup_database_for_tests():
             break
         except OperationalError as e:
             logging.warning(
-                f"Product Service Tests: Test setup DB connection failed: {e}. Retrying in {retry_delay_seconds} seconds..."
+                f"Product Service Tests: Test setup DB connection failed: {e}. "
+                f"Retrying in {retry_delay_seconds} seconds..."
             )
             time.sleep(retry_delay_seconds)
             if i == max_retries - 1:
@@ -129,7 +131,10 @@ def mock_azure_blob_storage():
 
         # Mock generate_blob_sas
         with patch("app.main.generate_blob_sas") as mock_generate_blob_sas:
-            mock_generate_blob_sas.return_value = "sv=2021-08-01&st=2024-01-01T00%3A00%3A00Z&se=2024-01-01T01%3A00%3A00Z&sr=b&sp=r&sig=mock_sas_token"
+            mock_generate_blob_sas.return_value = (
+                "sv=2021-08-01&st=2024-01-01T00%3A00%3A00Z&se=2024-01-01T01%3A00%3A00Z"
+                "&sr=b&sp=r&sig=mock_sas_token"
+            )
             yield mock_blob_service_client  # Yield the mock object for potential assertions
 
 

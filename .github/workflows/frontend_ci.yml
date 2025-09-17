@@ -6,7 +6,7 @@ on:
   # Manual trigger
   workflow_dispatch:
 
-  # Automatically on pushes to main branch
+
   push:
     branches:
       - main
