@@ -1,6 +1,7 @@
 name: CD - Deploy Backend Services to AKS
 
 on:
+  # Manual trigger with inputs
   workflow_dispatch:
     inputs:
       aks_cluster_name:
@@ -16,10 +17,36 @@ on:
         required: true
         default: '<acr_name>'
 
+  # Automatic trigger after successful backend CI
+  workflow_run:
+    workflows: ["Backend CI - Test, Build and Push Images to ACR"]
+    types:
+      - completed
+    branches:
+      - main  # Only auto-deploy from main branch
+
+  # Can be called by other workflows
+  workflow_call:
+    inputs:
+      aks_cluster_name:
+        required: true
+        type: string
+        default: '<aks_cluster_name>'
+      aks_resource_group:
+        required: true
+        type: string
+        default: '<resource_group_name>'
+      aks_acr_name:
+        required: true
+        type: string
+        default: '<acr_name>'
+
 jobs:
   deploy_backend:
     runs-on: ubuntu-latest
     environment: Production
+    # Only run if the preceding workflow succeeded (for workflow_run) or always run for manual/workflow_call
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
@@ -35,13 +62,32 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           enable-AzPSSession: true
 
+      - name: Set deployment parameters
+        id: set_params
+        run: |
+          # Use inputs from different event types
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "aks_cluster_name=${{ github.event.inputs.aks_cluster_name }}" >> $GITHUB_ENV
+            echo "aks_resource_group=${{ github.event.inputs.aks_resource_group }}" >> $GITHUB_ENV
+            echo "aks_acr_name=${{ github.event.inputs.aks_acr_name }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event_name }}" == "workflow_call" ]]; then
+            echo "aks_cluster_name=${{ inputs.aks_cluster_name }}" >> $GITHUB_ENV
+            echo "aks_resource_group=${{ inputs.aks_resource_group }}" >> $GITHUB_ENV
+            echo "aks_acr_name=${{ inputs.aks_acr_name }}" >> $GITHUB_ENV
+          else
+            # For workflow_run, use default values (would typically be set in secrets)
+            echo "aks_cluster_name=${{ secrets.AKS_CLUSTER_NAME || '<aks_cluster_name>' }}" >> $GITHUB_ENV
+            echo "aks_resource_group=${{ secrets.AKS_RESOURCE_GROUP || '<resource_group_name>' }}" >> $GITHUB_ENV
+            echo "aks_acr_name=${{ secrets.ACR_NAME || '<acr_name>' }}" >> $GITHUB_ENV
+          fi
+
       - name: Set Kubernetes context (get AKS credentials)
         run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
+          az aks get-credentials --resource-group ${{ env.aks_resource_group }} --name ${{ env.aks_cluster_name }} --overwrite-existing
 
       - name: Attach ACR
         run: |
-          az aks update --name ${{ github.event.inputs.aks_cluster_name }} --resource-group ${{ github.event.inputs.aks_resource_group }} --attach-acr ${{ github.event.inputs.aks_acr_name }}
+          az aks update --name ${{ env.aks_cluster_name }} --resource-group ${{ env.aks_resource_group }} --attach-acr ${{ env.aks_acr_name }}
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |

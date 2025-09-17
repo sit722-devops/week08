@@ -6,10 +6,11 @@ on:
   # Manual trigger
   workflow_dispatch:
 
-  # Automatically on pushes to main branch
+  # Automatically on pushes to main and development branches
   push:
     branches:
       - main
+      - development
     paths: # Only trigger if changes are in the frontend directory
       - 'frontend/**'
       - '.github/workflows/frontend_ci.yml' # Trigger if this workflow file changes
@@ -26,6 +27,8 @@ env:
 jobs:
   build_and_push_frontend:
     runs-on: ubuntu-latest
+    # Only push images when on main or development branch (not PRs)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     steps:
     - name: Checkout repository
@@ -45,7 +48,9 @@ jobs:
     - name: Build and Push Frontend Image
       run: |
         docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
+        docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }} ./frontend/
         docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
+        docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }}
 
     # Logout from Azure for security (runs even if image push fails)
     - name: Logout from Azure

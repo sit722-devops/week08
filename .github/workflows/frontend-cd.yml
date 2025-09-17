@@ -2,9 +2,9 @@
 
 name: CD - Deploy Frontend to AKS
 
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
+# This workflow can be called by other workflows, triggered automatically, or run manually
 on:
+  # Manual trigger with inputs
   workflow_dispatch:
     inputs:
       product_api_ip:
@@ -24,6 +24,15 @@ on:
         required: true
         default: '<<resource_group_name>'
 
+  # Automatic trigger after successful frontend CI
+  workflow_run:
+    workflows: ["Frontend CI - Build & Push Image"]
+    types:
+      - completed
+    branches:
+      - main  # Only auto-deploy from main branch
+
+  # Can be called by other workflows
   workflow_call:
     inputs:
       product_api_ip:
@@ -43,6 +52,8 @@ jobs:
   deploy_frontend:
     runs-on: ubuntu-latest
     environment: Production
+    # Only run if the preceding workflow succeeded (for workflow_run) or always run for manual/workflow_call
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
 
     steps:
       - name: Checkout repository
@@ -58,13 +69,35 @@ jobs:
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
+      - name: Set deployment parameters
+        id: set_params
+        run: |
+          # Use inputs from different event types
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "product_api_ip=${{ github.event.inputs.product_api_ip }}" >> $GITHUB_ENV
+            echo "order_api_ip=${{ github.event.inputs.order_api_ip }}" >> $GITHUB_ENV
+            echo "aks_cluster_name=${{ github.event.inputs.aks_cluster_name }}" >> $GITHUB_ENV
+            echo "aks_resource_group=${{ github.event.inputs.aks_resource_group }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event_name }}" == "workflow_call" ]]; then
+            echo "product_api_ip=${{ inputs.product_api_ip }}" >> $GITHUB_ENV
+            echo "order_api_ip=${{ inputs.order_api_ip }}" >> $GITHUB_ENV
+            echo "aks_cluster_name=${{ inputs.aks_cluster_name }}" >> $GITHUB_ENV
+            echo "aks_resource_group=${{ inputs.aks_resource_group }}" >> $GITHUB_ENV
+          else
+            # For workflow_run (automatic deployment), use default/fallback values
+            echo "product_api_ip=${{ secrets.PRODUCT_API_IP || 'http://<ip_address>:8000' }}" >> $GITHUB_ENV
+            echo "order_api_ip=${{ secrets.ORDER_API_IP || 'http://<ip_address>:8001' }}" >> $GITHUB_ENV
+            echo "aks_cluster_name=${{ secrets.AKS_CLUSTER_NAME || '<aks_name>' }}" >> $GITHUB_ENV
+            echo "aks_resource_group=${{ secrets.AKS_RESOURCE_GROUP || '<resource_group_name>' }}" >> $GITHUB_ENV
+          fi
+
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
+          echo "Injecting IPs into frontend/main.js"
           # Ensure frontend/main.js is directly in the path for sed
-          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
-          
+          sed -i "s|_PRODUCT_API_URL_|${{ env.product_api_ip }}|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|${{ env.order_api_ip }}|g" frontend/main.js
+
           # Display the modified file content for debugging
           echo "--- Modified main.js content ---"
           cat frontend/main.js
@@ -79,12 +112,12 @@ jobs:
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
         with:
-          resource-group: ${{ inputs.aks_resource_group }}
-          cluster-name: ${{ inputs.aks_cluster_name }}
+          resource-group: ${{ env.aks_resource_group }}
+          cluster-name: ${{ env.aks_cluster_name }}
 
       - name: Deploy Frontend to AKS
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
+          echo "Deploying frontend with latest tag to AKS cluster: ${{ env.aks_cluster_name }}"
           cd k8s/
           # Ensure frontend-service.yaml is configured with your ACR
           kubectl apply -f frontend.yaml

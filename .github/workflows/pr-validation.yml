@@ -1,0 +1,170 @@
+# Pull Request Validation Workflow
+# This workflow runs on pull requests to validate code quality before merging
+
+name: PR Validation - Test & Build
+
+on:
+  pull_request:
+    branches:
+      - main
+      - development
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/**'
+
+# Define global environment variables
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+  IMAGE_TAG: pr-${{ github.event.number }}-${{ github.sha }}
+
+jobs:
+  # Job 1: Validate Backend Changes
+  validate_backend:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.changed_files, 'backend/')
+
+    services:
+      # Product DB container for testing
+      product_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: products
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      # Order DB container for testing
+      order_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orders
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          for req in backend/*/requirements.txt; do
+            echo "Installing $req"
+            pip install -r "$req"
+          done
+          pip install pytest httpx flake8
+
+      - name: Run code quality checks
+        run: |
+          echo "Running linting checks..."
+          for service in backend/*/; do
+            echo "Checking $service"
+            flake8 "$service" --count --select=E9,F63,F7,F82 --show-source --statistics || true
+          done
+
+      - name: Run product_service tests
+        working-directory: backend/product_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: products
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: |
+          pytest tests --maxfail=1 --disable-warnings -q
+
+      - name: Run order_service tests
+        working-directory: backend/order_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+          POSTGRES_DB: orders
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: |
+          pytest tests --maxfail=1 --disable-warnings -q
+
+      - name: Build backend images (validation only)
+        run: |
+          echo "Validating backend Docker builds..."
+          docker build -t validation/product_service:${{ env.IMAGE_TAG }} ./backend/product_service/
+          docker build -t validation/order_service:${{ env.IMAGE_TAG }} ./backend/order_service/
+
+  # Job 2: Validate Frontend Changes
+  validate_frontend:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.changed_files, 'frontend/')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate frontend build
+        run: |
+          echo "Validating frontend Docker build..."
+          docker build -t validation/frontend:${{ env.IMAGE_TAG }} ./frontend/
+
+      - name: Basic frontend validation
+        run: |
+          echo "Running basic frontend validation..."
+          # Check that main.js exists and has basic structure
+          if [ -f "frontend/main.js" ]; then
+            echo "✓ main.js found"
+            if grep -q "_PRODUCT_API_URL_\|_ORDER_API_URL_" frontend/main.js; then
+              echo "✓ API URL placeholders found"
+            else
+              echo "⚠ API URL placeholders missing - may cause runtime issues"
+              exit 1
+            fi
+          else
+            echo "✗ main.js not found"
+            exit 1
+          fi
+
+  # Job 3: Security and Quality Gate
+  security_check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for secrets in code
+        run: |
+          echo "Scanning for potential secrets..."
+          # Basic secret detection
+          if grep -r -i "password\|secret\|key" --include="*.py" --include="*.js" --include="*.yml" --include="*.yaml" backend/ frontend/ .github/ 2>/dev/null | grep -v "POSTGRES_PASSWORD\|secrets\." | grep -v "#"; then
+            echo "⚠ Potential hardcoded secrets found. Please review."
+            # Don't fail the check, just warn
+          else
+            echo "✓ No obvious hardcoded secrets found"
+          fi
+
+      - name: Validate workflow syntax
+        run: |
+          echo "Validating workflow YAML syntax..."
+          for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
+            if [ -f "$workflow" ]; then
+              echo "Checking $workflow"
+              python -c "import yaml; yaml.safe_load(open('$workflow'))" || exit 1
+            fi
+          done
+          echo "✓ All workflow files have valid YAML syntax"

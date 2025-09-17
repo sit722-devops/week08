@@ -1,0 +1,86 @@
+1. Set Variables (Replace with your values)
+
+  # Set your preferred values
+  RESOURCE_GROUP="sit722-week08-rg"
+  LOCATION="australiaeast"
+  STORAGE_ACCOUNT="sit722week08storage"
+  ACR_NAME="sit722week08acr"
+  AKS_CLUSTER="sit722-week08-aks"
+  SP_NAME="sit722-week08-sp"
+
+  2. Create Resource Group
+
+  az group create --name $RESOURCE_GROUP --location $LOCATION
+
+  3. Create Storage Account
+
+  az storage account create \
+    --name $STORAGE_ACCOUNT \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --sku Standard_LRS
+
+  4. Create Azure Container Registry (ACR)
+
+  az acr create \
+    --resource-group $RESOURCE_GROUP \
+    --name $ACR_NAME \
+    --sku Basic \
+    --location $LOCATION
+
+  5. Create AKS Cluster
+
+  az aks create \
+    --resource-group $RESOURCE_GROUP \
+    --name $AKS_CLUSTER \
+    --node-count 2 \
+    --node-vm-size Standard_B2s \
+    --location $LOCATION \
+    --attach-acr $ACR_NAME \
+    --generate-ssh-keys
+
+  6. Create Service Principal with Owner Permission
+
+  # Get subscription ID
+  SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+  # Get resource group ID  
+  RESOURCE_GROUP_ID=$(az group show --name $RESOURCE_GROUP --query id -o tsv)
+
+  # Create service principal with Owner role on the resource group
+  az ad sp create-for-rbac \
+    --name $SP_NAME \
+    --role Owner \
+    --scopes $RESOURCE_GROUP_ID \
+    --json-auth
+
+  7. Get ACR Login Server (for GitHub secrets)
+
+  az acr show --name $ACR_NAME --resource-group $RESOURCE_GROUP --query loginServer -o tsv
+
+  Important Notes:
+  - The Service Principal command (#6) will output JSON credentials - save this for the AZURE_CREDENTIALS GitHub secret
+  - The ACR login server (#7) is needed for the AZURE_CONTAINER_REGISTRY GitHub secret
+  - Make sure to replace the variable values in step 1 with your preferred names
+  - The AKS creation may take 10-15 minutes
+
+  Run these commands in order and take screenshots as requested!
+
+
+
+# AZURE_CREDENTIALS output will be shown here - copy this JSON for GitHub secrets
+# Example format:
+{
+  "clientId": "<client-id>",
+  "clientSecret": "<client-secret>",
+  "subscriptionId": "<subscription-id>",
+  "tenantId": "<tenant-id>",
+  "activeDirectoryEndpointUrl": "https://login.microsoftonline.com",
+  "resourceManagerEndpointUrl": "https://management.azure.com/",
+  "activeDirectoryGraphResourceId": "https://graph.windows.net/",
+  "sqlManagementEndpointUrl": "https://management.core.windows.net:8443/",
+  "galleryEndpointUrl": "https://gallery.azure.com/",
+  "managementEndpointUrl": "https://management.core.windows.net/"
+}
+
+sit722week08acr.azurecr.io

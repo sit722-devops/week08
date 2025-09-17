@@ -2,16 +2,16 @@
 
 name: Backend CI - Test, Build and Push Images to ACR
 
-# Trigger the workflow on pushes to the 'main' branch
-# You can also add 'pull_request:' to run on PRs
+# Trigger the workflow on pushes to main and development branches
 on:
   # Manual trigger
   workflow_dispatch:
 
-  # Automatically on pushes to main branch
+  # Automatically on pushes to main and development branches
   push:
     branches:
       - main
+      - development
     paths: # Only trigger if changes are in backend directories
       - 'backend/**'
       - '.github/workflows/backend_ci.yml' # Trigger if this workflow file changes
@@ -113,6 +113,8 @@ jobs:
   build_and_push_images:
     runs-on: ubuntu-latest
     needs: test_and_lint_backends
+    # Only push images when on main or development branch (not PRs)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     steps:
     - name: Checkout repository
@@ -132,13 +134,17 @@ jobs:
     - name: Build and Push Product Service Image
       run: |
         docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:latest ./backend/product_service/
+        docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }} ./backend/product_service/
         docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
+        docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }}
 
     # Build and Push Docker image for Order Service
     - name: Build and Push Order Service Image
       run: |
         docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:latest ./backend/order_service/
+        docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }} ./backend/order_service/
         docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
+        docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }}
 
     # Logout from Azure for security (runs even if image push fails)
     - name: Logout from Azure
