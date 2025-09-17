@@ -9,6 +9,9 @@ on:
         type: string
       aks_acr_name:
         type: string
+    secrets:
+      AZURE_CREDENTIALS:
+        required: true
     outputs:
       PRODUCT_API_IP:
         description: "Product API IP"
