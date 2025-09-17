@@ -8,7 +8,7 @@ on:
   # Manual trigger
   workflow_dispatch:
 
-  # Automatically on pushes to main branchs
+  # Automatically on pushes to main branchss
   push:
     branches:
       - main
