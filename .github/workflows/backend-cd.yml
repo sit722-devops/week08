@@ -34,7 +34,8 @@ jobs:
       - name: Ensure namespace exists
         run: kubectl get ns "$NS" || kubectl create ns "$NS"
 
-      - name: Attach ACR (idempotent)
+      - name: Attach ACR (idempotent; ignore if no rights)
+        continue-on-error: true
         run: az aks update --name "$AKS" --resource-group "$RG" --attach-acr "$ACR_NAME"
 
       - name: Apply infra (ConfigMaps, Secrets, DBs)
