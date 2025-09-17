@@ -47,4 +47,5 @@ jobs:
       aks_cluster_name: ${{ inputs.aks_cluster_name }}
       aks_resource_group: ${{ inputs.aks_resource_group }}
     secrets:
+      AZURE_CONTAINER_REGISTRY: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
       AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
