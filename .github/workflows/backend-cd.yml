@@ -9,13 +9,10 @@ env:
   AKS: ${{ vars.AKS_CLUSTER_NAME }}
   NS:  ${{ vars.AKS_NAMESPACE }}
   ACR_NAME: ${{ vars.ACR_NAME }}
-  PRODUCT_SVC: ""     # leave blank to auto-detect
-  ORDER_SVC:   ""     # leave blank to auto-detect
 
 jobs:
   deploy_backend:
     runs-on: ubuntu-latest
-    environment: Production
 
     outputs:
       PRODUCT_API_IP: ${{ steps.out_prod_ip.outputs.external_ip }}
@@ -30,38 +27,36 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Get AKS credentials
-        run: az aks get-credentials --resource-group "$RG" --name "$AKS" --overwrite-existing
+        run: az aks get-credentials --resource-group \"$RG\" --name \"$AKS\" --overwrite-existing
 
       - name: Ensure namespace exists
-        run: kubectl get ns "$NS" || kubectl create ns "$NS"
+        run: kubectl get ns \"$NS\" || kubectl create ns \"$NS\"
 
       - name: Attach ACR (idempotent; ignore if no rights)
         continue-on-error: true
-        run: az aks update --name "$AKS" --resource-group "$RG" --attach-acr "$ACR_NAME"
+        run: az aks update --name \"$AKS\" --resource-group \"$RG\" --attach-acr \"$ACR_NAME\"
 
       - name: Apply infra (ConfigMaps, Secrets, DBs)
         working-directory: k8s
         run: |
-          kubectl -n "$NS" apply -f configmaps.yaml
-          kubectl -n "$NS" apply -f secrets.yaml
-          kubectl -n "$NS" apply -f product-db.yaml
-          kubectl -n "$NS" apply -f order-db.yaml
+          kubectl -n \"$NS\" apply -f configmaps.yaml
+          kubectl -n \"$NS\" apply -f secrets.yaml
+          kubectl -n \"$NS\" apply -f product-db.yaml
+          kubectl -n \"$NS\" apply -f order-db.yaml
 
       - name: Deploy product & order services
         working-directory: k8s
         run: |
-          kubectl -n "$NS" apply -f product-service.yaml
-          kubectl -n "$NS" apply -f order-service.yaml
+          kubectl -n \"$NS\" apply -f product-service.yaml
+          kubectl -n \"$NS\" apply -f order-service.yaml
 
       - name: Detect service names (product/order)
         shell: bash
         run: |
           set -e
-          PROD_NAME="${PRODUCT_SVC:-}"
-          ORD_NAME="${ORDER_SVC:-}"
-          [[ -z "$PROD_NAME" ]] && PROD_NAME=$(kubectl -n "$NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^product' | head -1 || true)
-          [[ -z "$ORD_NAME"  ]] && ORD_NAME=$(kubectl -n "$NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^order'   | head -1 || true)
-          echo "Detected: product=${PROD_NAME:-<none>} order=${ORD_NAME:-<none>}"
+          PROD_NAME=$(kubectl -n \"$NS\" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^product' | head -1 || true)
+          ORD_NAME=$(kubectl -n \"$NS\" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^order'   | head -1 || true)
+          echo \"Detected: product=${PROD_NAME:-<none>} order=${ORD_NAME:-<none>}\"
           echo PRODUCT_SVC=$PROD_NAME >> $GITHUB_ENV
           echo ORDER_SVC=$ORD_NAME   >> $GITHUB_ENV
 
@@ -70,12 +65,12 @@ jobs:
         run: |
           set -e
           for i in {1..60}; do
-            PROD_IP=$(kubectl -n "$NS" get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            ORD_IP=$(kubectl -n "$NS"  get svc "$ORDER_SVC"   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            echo "Attempt $i: product=${PROD_IP:-<none>} order=${ORD_IP:-<none>}"
-            if [[ -n "$PROD_IP" && -n "$ORD_IP" ]]; then
-              echo "PRODUCT_IP=$PROD_IP" >> $GITHUB_ENV
-              echo "ORDER_IP=$ORD_IP"   >> $GITHUB_ENV
+            PROD_IP=$(kubectl -n \"$NS\" get svc \"$PRODUCT_SVC\" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            ORD_IP=$(kubectl -n \"$NS\"  get svc \"$ORDER_SVC\"   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            echo \"Attempt $i: product=${PROD_IP:-<none>} order=${ORD_IP:-<none>}\"
+            if [[ -n \"$PROD_IP\" && -n \"$ORD_IP\" ]]; then
+              echo \"PRODUCT_IP=$PROD_IP\" >> $GITHUB_ENV
+              echo \"ORDER_IP=$ORD_IP\"   >> $GITHUB_ENV
               exit 0
             fi
             sleep 5
@@ -83,12 +78,16 @@ jobs:
           echo 'Timed out waiting for external IPs'; exit 1
 
       - id: out_prod_ip
-        run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
+        run: echo \"external_ip=${{ env.PRODUCT_IP }}\" >> $GITHUB_OUTPUT
 
       - id: out_order_ip
-        run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
+        run: echo \"external_ip=${{ env.ORDER_IP }}\" >> $GITHUB_OUTPUT
 
       - name: Azure Logout
         if: always()
         run: az logout
 '@ | Set-Content -Encoding UTF8 .github/workflows/backend-cd.yml"
+
+git add .github\workflows\backend-cd.yml
+git commit -m "cd: remove environment gate; tolerate attach-acr; auto-detect svc names; wait for IPs"
+git push
