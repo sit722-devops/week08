@@ -6,6 +6,13 @@ on:
   # Manual trigger
   workflow_dispatch:
 
+  pull_request:
+    branches: 
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend_ci.yml'
+
   # Automatically on pushes to main branch
   push:
     branches:
@@ -13,6 +20,10 @@ on:
     paths: # Only trigger if changes are in the frontend directory
       - 'frontend/**'
       - '.github/workflows/frontend_ci.yml' # Trigger if this workflow file changes
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 # Define global environment variables that can be used across jobs
 env:
@@ -26,6 +37,7 @@ env:
 jobs:
   build_and_push_frontend:
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
     - name: Checkout repository
