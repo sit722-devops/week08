@@ -2,6 +2,8 @@
 
 name: Combined CI - Test, Build and Push Images to ACR
 
+# Adding a comment to test pull request trigger
+
 # Trigger the workflow on pushes to the 'main' branch
 # You can also add 'pull_request:' to run on PRs
 on:
