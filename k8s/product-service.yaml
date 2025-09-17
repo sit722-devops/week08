@@ -1,5 +1,4 @@
-# week08/k8s/product-service.yaml
-
+﻿# k8s/product-service.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,12 +17,11 @@ spec:
     spec:
       containers:
       - name: product-service-container
-        image: durgeshsamariya.azurecr.io/product_service:latest
+        image: sit722w08acr304694959.azurecr.io/product_service:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
         env:
-        # Database connection details
         - name: POSTGRES_HOST
           value: product-db-service-w08e1
         - name: POSTGRES_DB
@@ -34,32 +32,32 @@ spec:
         - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: POSTGRES_USER
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: POSTGRES_PASSWORD
         - name: AZURE_STORAGE_ACCOUNT_NAME
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: AZURE_STORAGE_ACCOUNT_NAME
         - name: AZURE_STORAGE_ACCOUNT_KEY
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: AZURE_STORAGE_ACCOUNT_KEY
         - name: AZURE_STORAGE_CONTAINER_NAME
           valueFrom:
             configMapKeyRef:
-              name: ecomm-config-w08e1 # ConfigMap name matches
+              name: ecomm-config-w08e1
               key: AZURE_STORAGE_CONTAINER_NAME
         - name: AZURE_SAS_TOKEN_EXPIRY_HOURS
           valueFrom:
             configMapKeyRef:
-              name: ecomm-config-w08e1 # ConfigMap name matches
+              name: ecomm-config-w08e1
               key: AZURE_SAS_TOKEN_EXPIRY_HOURS
 ---
 apiVersion: v1
@@ -72,7 +70,8 @@ spec:
   selector:
     app: product-service
   ports:
-    - protocol: TCP
-      port: 8000
-      targetPort: 8000
+    - name: http
+      protocol: TCP
+      port: 80           # expose on 80 publicly
+      targetPort: 8000   # app listens on 8000
   type: LoadBalancer
