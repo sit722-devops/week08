@@ -10,6 +10,8 @@ on:
       aks_acr_name:
         type: string
     secrets:
+      AZURE_CONTAINER_REGISTRY:
+        required: true
       AZURE_CREDENTIALS:
         required: true
     outputs:
@@ -62,6 +64,12 @@ jobs:
         run: |
           az aks update --name ${{ github.event.inputs.aks_cluster_name }} --resource-group ${{ github.event.inputs.aks_resource_group }} --attach-acr ${{ github.event.inputs.aks_acr_name }}
 
+      - name: Substitute ACR in YAML
+        run: |
+          export ACR=${{ secrets.AZURE_CONTAINER_REGISTRY }}
+          envsubst < k8s/product-service.yaml > k8s/product-service-substituted.yaml
+          envsubst < k8s/order-service.yaml > k8s/order-service-substituted.yaml
+
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
           echo "Deploying backend infrastructure..."
@@ -75,8 +83,8 @@ jobs:
         run: |
           echo "Deploying backend microservices..."
           cd k8s/
-          kubectl apply -f product-service.yaml
-          kubectl apply -f order-service.yaml
+          kubectl apply -f product-service-substituted.yaml
+          kubectl apply -f order-service-substituted.yaml
 
       - name: Wait for Backend LoadBalancer IPs
         run: |

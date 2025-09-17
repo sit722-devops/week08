@@ -81,19 +81,22 @@ jobs:
         run: |
           docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
           docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
-
+          
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
         with:
           resource-group: ${{ inputs.aks_resource_group }}
           cluster-name: ${{ inputs.aks_cluster_name }}
-
+      - name: Substitute ACR in YAML
+        run: |
+          export ACR=${{ secrets.AZURE_CONTAINER_REGISTRY }}
+          envsubst < k8s/frontend.yaml > k8s/frontend-substituted.yaml
       - name: Deploy Frontend to AKS
         run: |
           echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
           cd k8s/
           # Ensure frontend-service.yaml is configured with your ACR
-          kubectl apply -f frontend.yaml
+          kubectl apply -f frontend-substituted.yaml
 
       - name: Logout from Azure (AKS deployment)
         run: az logout
