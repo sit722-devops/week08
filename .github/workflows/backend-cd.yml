@@ -1,20 +1,15 @@
 name: CD — Deploy Backend Services to AKS
 
 on:
-  workflow_dispatch:
-    inputs:
-      aks_cluster_name:
-        description: "AKS cluster name"
-        required: true
-        default: "sit722-w08-aks"
-      aks_resource_group:
-        description: "AKS resource group"
-        required: true
-        default: "sit722-w08-rg"
-      aks_acr_name:
-        description: "ACR registry NAME"
-        required: true
-        default: "sit722w08acr27234"
+  workflow_dispatch: {}
+
+env:
+  RG:  ${{ vars.AKS_RESOURCE_GROUP }}
+  AKS: ${{ vars.AKS_CLUSTER_NAME }}
+  NS:  ${{ vars.AKS_NAMESPACE }}
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  PRODUCT_SVC: product-service         # change if your k8s Service has a suffix
+  ORDER_SVC:   order-service           # change if your k8s Service has a suffix
 
 jobs:
   deploy_backend:
@@ -32,44 +27,38 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-          enable-AzPSSession: true
 
       - name: Get AKS credentials
-        run: |
-          az aks get-credentials \
-            --resource-group "${{ github.event.inputs.aks_resource_group }}" \
-            --name "${{ github.event.inputs.aks_cluster_name }}" \
-            --overwrite-existing
+        run: az aks get-credentials --resource-group "$RG" --name "$AKS" --overwrite-existing
 
-      - name: Attach ACR (safe if already attached)
-        run: |
-          az aks update \
-            --name "${{ github.event.inputs.aks_cluster_name }}" \
-            --resource-group "${{ github.event.inputs.aks_resource_group }}" \
-            --attach-acr "${{ github.event.inputs.aks_acr_name }}"
+      - name: Ensure namespace exists
+        run: kubectl get ns "$NS" || kubectl create ns "$NS"
 
-      - name: Apply infra (config, secrets, DBs)
+      - name: Attach ACR (idempotent)
+        run: az aks update --name "$AKS" --resource-group "$RG" --attach-acr "$ACR_NAME"
+
+      - name: Apply infra (ConfigMaps, Secrets, DBs)
         working-directory: k8s
         run: |
-          kubectl apply -f configmaps.yaml
-          kubectl apply -f secrets.yaml
-          kubectl apply -f product-db.yaml
-          kubectl apply -f order-db.yaml
+          kubectl -n "$NS" apply -f configmaps.yaml
+          kubectl -n "$NS" apply -f secrets.yaml
+          kubectl -n "$NS" apply -f product-db.yaml
+          kubectl -n "$NS" apply -f order-db.yaml
 
       - name: Deploy product & order services
         working-directory: k8s
         run: |
-          kubectl apply -f product-service.yaml
-          kubectl apply -f order-service.yaml
+          kubectl -n "$NS" apply -f product-service.yaml
+          kubectl -n "$NS" apply -f order-service.yaml
 
       - name: Wait for LoadBalancer IPs (≤5 min)
         shell: bash
         run: |
           set -e
           for i in {1..60}; do
-            PROD_IP=$(kubectl get svc product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            ORD_IP=$(kubectl get svc order-service-w08e1  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            echo "Attempt $i: product=$PROD_IP order=$ORD_IP"
+            PROD_IP=$(kubectl -n "$NS" get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            ORD_IP=$(kubectl -n "$NS"  get svc "$ORDER_SVC"   -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            echo "Attempt $i: product=${PROD_IP:-<none>} order=${ORD_IP:-<none>}"
             if [[ -n "$PROD_IP" && -n "$ORD_IP" ]]; then
               echo "PRODUCT_IP=$PROD_IP" >> $GITHUB_ENV
               echo "ORDER_IP=$ORD_IP"   >> $GITHUB_ENV
@@ -85,6 +74,6 @@ jobs:
       - id: out_order_ip
         run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
 
-      - name: Logout Azure
+      - name: Azure Logout
         if: always()
         run: az logout
