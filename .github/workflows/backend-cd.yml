@@ -1,3 +1,4 @@
+powershell -NoP -C "@'
 name: CD — Deploy Backend Services to AKS
 
 on:
@@ -8,8 +9,8 @@ env:
   AKS: ${{ vars.AKS_CLUSTER_NAME }}
   NS:  ${{ vars.AKS_NAMESPACE }}
   ACR_NAME: ${{ vars.ACR_NAME }}
-  PRODUCT_SVC: product-service         # change if your k8s Service has a suffix
-  ORDER_SVC:   order-service           # change if your k8s Service has a suffix
+  PRODUCT_SVC: ""     # leave blank to auto-detect
+  ORDER_SVC:   ""     # leave blank to auto-detect
 
 jobs:
   deploy_backend:
@@ -52,13 +53,25 @@ jobs:
           kubectl -n "$NS" apply -f product-service.yaml
           kubectl -n "$NS" apply -f order-service.yaml
 
+      - name: Detect service names (product/order)
+        shell: bash
+        run: |
+          set -e
+          PROD_NAME="${PRODUCT_SVC:-}"
+          ORD_NAME="${ORDER_SVC:-}"
+          [[ -z "$PROD_NAME" ]] && PROD_NAME=$(kubectl -n "$NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^product' | head -1 || true)
+          [[ -z "$ORD_NAME"  ]] && ORD_NAME=$(kubectl -n "$NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^order'   | head -1 || true)
+          echo "Detected: product=${PROD_NAME:-<none>} order=${ORD_NAME:-<none>}"
+          echo PRODUCT_SVC=$PROD_NAME >> $GITHUB_ENV
+          echo ORDER_SVC=$ORD_NAME   >> $GITHUB_ENV
+
       - name: Wait for LoadBalancer IPs (≤5 min)
         shell: bash
         run: |
           set -e
           for i in {1..60}; do
-            PROD_IP=$(kubectl -n "$NS" get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            ORD_IP=$(kubectl -n "$NS"  get svc "$ORDER_SVC"   -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            PROD_IP=$(kubectl -n "$NS" get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            ORD_IP=$(kubectl -n "$NS"  get svc "$ORDER_SVC"   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             echo "Attempt $i: product=${PROD_IP:-<none>} order=${ORD_IP:-<none>}"
             if [[ -n "$PROD_IP" && -n "$ORD_IP" ]]; then
               echo "PRODUCT_IP=$PROD_IP" >> $GITHUB_ENV
@@ -67,7 +80,7 @@ jobs:
             fi
             sleep 5
           done
-          echo "Timed out waiting for external IPs"; exit 1
+          echo 'Timed out waiting for external IPs'; exit 1
 
       - id: out_prod_ip
         run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
@@ -78,3 +91,4 @@ jobs:
       - name: Azure Logout
         if: always()
         run: az logout
+'@ | Set-Content -Encoding UTF8 .github/workflows/backend-cd.yml"
