@@ -11,10 +11,14 @@ on:
         description: "AKS resource group"
         required: true
         default: "sit722-w08-rg"
-      aks_acr_name:
-        description: "ACR registry NAME (no .azurecr.io)"
+      aks_namespace:
+        description: "Kubernetes namespace"
         required: true
-        default: "sit722w08acr27234"
+        default: "week08"
+      aks_acr_name:
+        description: "ACR NAME (no .azurecr.io)"
+        required: true
+        default: "sit722w08acr304694959"
 
 jobs:
   deploy_frontend:
@@ -39,25 +43,38 @@ jobs:
             --name "${{ github.event.inputs.aks_cluster_name }}" \
             --overwrite-existing
 
-      - name: Attach ACR (safe if already attached)
+      - name: Attach ACR (safe if already attached / no Owner)
+        shell: bash
         run: |
+          set +e
           az aks update \
             --name "${{ github.event.inputs.aks_cluster_name }}" \
             --resource-group "${{ github.event.inputs.aks_resource_group }}" \
             --attach-acr "${{ github.event.inputs.aks_acr_name }}"
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "Skipping ACR attach (likely already attached or insufficient rights)."
+          fi
+          exit 0
 
       - name: Apply frontend manifest
         working-directory: k8s
         run: |
           kubectl apply -f frontend.yaml
-          kubectl rollout status deploy/frontend -n default --timeout=180s || true
+          NS="${{ github.event.inputs.aks_namespace }}"
+          DEPLOY=$(kubectl -n "$NS" get deploy -l app=frontend -o jsonpath='{.items[0].metadata.name}')
+          echo "Detected deployment: $DEPLOY"
+          kubectl -n "$NS" rollout status "deploy/$DEPLOY" --timeout=180s || true
 
       - name: Wait for frontend external IP (≤5 min)
         shell: bash
         run: |
           set -e
+          NS="${{ github.event.inputs.aks_namespace }}"
+          SVC=$(kubectl -n "$NS" get svc -l app=frontend -o jsonpath='{.items[0].metadata.name}')
+          echo "Detected service: $SVC"
           for i in {1..60}; do
-            FE_IP=$(kubectl get svc frontend-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            FE_IP=$(kubectl -n "$NS" get svc "$SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
             echo "Attempt $i: frontend=$FE_IP"
             if [[ -n "$FE_IP" ]]; then
               echo "FRONTEND_IP=$FE_IP" >> $GITHUB_ENV
