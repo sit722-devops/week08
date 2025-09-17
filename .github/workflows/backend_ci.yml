@@ -1,5 +1,5 @@
 # week08/.github/workflows/backend_ci.yml
-
+#pull request triuggers
 name: Backend CI - Test, Build and Push Images to ACR
 
 # Trigger the workflow on pushes to the 'main' branch
@@ -15,6 +15,9 @@ on:
     paths: # Only trigger if changes are in backend directories
       - 'backend/**'
       - '.github/workflows/backend_ci.yml' # Trigger if this workflow file changes
+  pull_request:
+    branches:
+      - main
 
 # Define global environment variables that can be used across jobs
 env:
@@ -131,14 +134,30 @@ jobs:
     # Build and Push Docker image for Product Service
     - name: Build and Push Product Service Image
       run: |
-        docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:latest ./backend/product_service/
-        docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
+        docker build --platform linux/amd64 -t ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }} ./backend/product_service/
+        docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }}
 
     # Build and Push Docker image for Order Service
-    - name: Build and Push Order Service Image
+    - name: Build and Push Order Service Image 
       run: |
-        docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:latest ./backend/order_service/
-        docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
+        docker build --platform linux/amd64 -t ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }} ./backend/order_service/
+        docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }}
+      
+    - name: Trigger Backend CD Workflow
+      uses: actions/github-script@v6
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'backend-cd.yml',
+            ref: 'main',
+            inputs: {
+              aks_cluster_name: '<aks_cluster_name>',
+              aks_resource_group: '<resource_group>',
+              aks_acr_name: '<acr_name>'
+            }
+          })
 
     # Logout from Azure for security (runs even if image push fails)
     - name: Logout from Azure

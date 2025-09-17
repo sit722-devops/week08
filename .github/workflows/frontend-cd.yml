@@ -88,6 +88,12 @@ jobs:
           cd k8s/
           # Ensure frontend-service.yaml is configured with your ACR
           kubectl apply -f frontend.yaml
+      
+      - name: Deploy Frontend with updated image
+        run: |
+          kubectl set image deployment/frontend-w08e1 \
+            frontend-container=${{ env.ACR_LOGIN_SERVER }}/frontend:${{ env.IMAGE_TAG }} \
+            --namespace=default
 
       - name: Logout from Azure (AKS deployment)
         run: az logout
