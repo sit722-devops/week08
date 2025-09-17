@@ -40,6 +40,8 @@ on:
         required: true
         type: string
     secrets:
+      AZURE_CONTAINER_REGISTRY:
+        required: true
       AZURE_CREDENTIALS:
         required: true
 
