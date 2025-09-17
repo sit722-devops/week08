@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: order-service-container
-          image: sit722azcr.azurecr.io/order_service:latest
+          image: sit722acr09.azurecr.io/order_service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
@@ -60,3 +60,4 @@ spec:
       port: 8001
       targetPort: 8000
   type: LoadBalancer
+
