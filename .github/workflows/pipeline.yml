@@ -149,8 +149,19 @@ jobs:
         run: |
           set -e
           
-          # Update Azure CLI to latest version
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          # Remove current problematic version
+          sudo apt-get remove -y azure-cli
+          
+          # Install a known stable version (2.64.0 or 2.65.0)
+          curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg > /dev/null
+          echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ noble main" | sudo tee /etc/apt/sources.list.d/azure-cli.list
+          sudo apt-get update
+          
+          # Install specific stable version
+          sudo apt-get install -y azure-cli=2.65.0-1~noble
+          
+          # Hold the package to prevent auto-updates
+          sudo apt-mark hold azure-cli
           
           # Remove problematic extensions
           for ext in aks-preview containerapp; do
@@ -160,12 +171,8 @@ jobs:
             fi
           done
           
-          # Clear any cached API versions
-          rm -rf ~/.azure/commandIndex.json || true
-          
-          # Force refresh of metadata
+          # Verify version
           az version --only-show-errors
-          az account list-locations --query "[0].name" -o tsv >/dev/null || true
 
       - name: Set AKS context
         run: |
