@@ -39,6 +39,9 @@ on:
       aks_resource_group:
         required: true
         type: string
+    secrets:
+      AZURE_CREDENTIALS:
+        required: true
 
 jobs:
   deploy_frontend:
