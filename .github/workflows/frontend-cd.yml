@@ -5,6 +5,7 @@ name: CD - Deploy Frontend to AKS
 # This workflow can be called by other workflows and takes inputs.
 # Or it can be run manually if you provide the IPs.
 on:
+  
   workflow_dispatch:
     inputs:
       product_api_ip:

@@ -1,0 +1,31 @@
+name: Deploy Full Stack to AKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      aks_cluster_name:
+        description: 'AKS Cluster'
+        required: true
+      aks_resource_group:
+        description: 'Resource Group'
+        required: true
+      aks_acr_name:
+        description: 'ACR Name'
+        required: true
+
+jobs:
+  deploy_backend:
+    uses: ./.github/workflows/backend-cd.yml
+    with:
+      aks_cluster_name: ${{ inputs.aks_cluster_name }}
+      aks_resource_group: ${{ inputs.aks_resource_group }}
+      aks_acr_name: ${{ inputs.aks_acr_name }}
+
+  deploy_frontend:
+    needs: deploy_backend
+    uses: ./.github/workflows/frontend-cd.yml
+    with:
+      product_api_ip: ${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}
+      order_api_ip: ${{ needs.deploy_backend.outputs.ORDER_API_IP }}
+      aks_cluster_name: ${{ inputs.aks_cluster_name }}
+      aks_resource_group: ${{ inputs.aks_resource_group }}
