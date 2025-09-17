@@ -4,17 +4,32 @@ on:
   workflow_dispatch:
     inputs:
       aks_cluster_name:
-        description: 'AKS Cluster'
+        description: "AKS Cluster"
         required: true
       aks_resource_group:
-        description: 'Resource Group'
+        description: "Resource Group"
         required: true
       aks_acr_name:
-        description: 'ACR Name'
+        description: "ACR Name"
         required: true
 
 jobs:
+  azure_login:
+    runs-on: ubuntu-latest
+    outputs:
+      AZURE_CREDENTIALS: ${{ steps.export_creds.outputs.AZURE_CREDENTIALS }}
+    steps:
+      - name: Export Azure Credentials
+        id: export_creds
+        run: echo "::set-output name=AZURE_CREDENTIALS::${{ secrets.AZURE_CREDENTIALS }}"
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
   deploy_backend:
+    needs: azure_login
     uses: ./.github/workflows/backend-cd.yml
     with:
       aks_cluster_name: ${{ inputs.aks_cluster_name }}
