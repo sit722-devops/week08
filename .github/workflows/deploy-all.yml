@@ -35,6 +35,8 @@ jobs:
       aks_cluster_name: ${{ inputs.aks_cluster_name }}
       aks_resource_group: ${{ inputs.aks_resource_group }}
       aks_acr_name: ${{ inputs.aks_acr_name }}
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
 
   deploy_frontend:
     needs: deploy_backend
@@ -44,3 +46,5 @@ jobs:
       order_api_ip: ${{ needs.deploy_backend.outputs.ORDER_API_IP }}
       aks_cluster_name: ${{ inputs.aks_cluster_name }}
       aks_resource_group: ${{ inputs.aks_resource_group }}
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
