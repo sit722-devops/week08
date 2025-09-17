@@ -8,21 +8,21 @@ on:
   workflow_dispatch:
     inputs:
       product_api_ip:
-        description: 'External IP of Product Service'
+        description: "External IP of Product Service"
         required: true
-        default: 'http://<ip_address>:8000'
+        default: "http://<ip_address>:8000"
       order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
+        description: "External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)"
         required: true
-        default: 'http://<ip_address>:8001'
+        default: "http://<ip_address>:8001"
       aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
+        description: "Name of the AKS Cluster to deploy to"
         required: true
-        default: '<aks_name>'
+        default: "<aks_name>"
       aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
+        description: "Resource Group of the AKS Cluster"
         required: true
-        default: '<<resource_group_name>'
+        default: "<<resource_group_name>"
 
   workflow_call:
     inputs:
@@ -38,6 +38,11 @@ on:
       aks_resource_group:
         required: true
         type: string
+    secrets:
+      AZURE_CONTAINER_REGISTRY:
+        required: true
+      AZURE_CREDENTIALS:
+        required: true
 
 jobs:
   deploy_frontend:
@@ -60,15 +65,15 @@ jobs:
 
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
+          echo "Injecting IPs into frontend/main.js"
           sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
-          
-          # Display the modified file content for debugging
-          echo "--- Modified main.js content ---"
-          cat frontend/main.js
-          echo "---------------------------------"
+          # Validate replacement
+          if grep -q "_PRODUCT_API_URL_" frontend/main.js || grep -q "_ORDER_API_URL_" frontend/main.js; then
+            echo "Error: Placeholders not replaced. Check inputs: product_api_ip=${{ inputs.product_api_ip }}, order_api_ip=${{ inputs.order_api_ip }}"
+            exit 1
+          fi
+          echo "Replacement successful. PRODUCT_API_BASE_URL: $(grep 'PRODUCT_API_BASE_URL' frontend/main.js)"
 
       # Build and Push Docker image for Frontend
       - name: Build and Push Frontend Image
@@ -81,13 +86,16 @@ jobs:
         with:
           resource-group: ${{ inputs.aks_resource_group }}
           cluster-name: ${{ inputs.aks_cluster_name }}
-
+      - name: Substitute ACR in YAML
+        run: |
+          export ACR=${{ secrets.AZURE_CONTAINER_REGISTRY }}
+          envsubst < k8s/frontend.yaml > k8s/frontend-substituted.yaml
       - name: Deploy Frontend to AKS
         run: |
           echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
           cd k8s/
           # Ensure frontend-service.yaml is configured with your ACR
-          kubectl apply -f frontend.yaml
+          kubectl apply -f frontend-substituted.yaml
 
       - name: Logout from Azure (AKS deployment)
         run: az logout
