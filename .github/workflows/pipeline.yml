@@ -138,11 +138,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
       - name: Harden Azure CLI (fix api-version issues)
         env:
           AZURE_EXTENSION_USE_DYNAMIC_INSTALL: no
@@ -150,9 +145,13 @@ jobs:
           set -e
           
           # Remove current problematic version
-          sudo apt-get remove -y azure-cli
+          sudo apt-get remove -y azure-cli || true
           
-          # Install a known stable version (2.64.0 or 2.65.0)
+          # Clean up any duplicate sources
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.list
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.sources
+          
+          # Install a known stable version
           curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg > /dev/null
           echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ noble main" | sudo tee /etc/apt/sources.list.d/azure-cli.list
           sudo apt-get update
@@ -171,24 +170,25 @@ jobs:
             fi
           done
           
+          # Clear any existing cache
+          rm -rf ~/.azure/ || true
+          rm -rf ~/.config/azure/ || true
+          
           # Verify version
           az version --only-show-errors
 
-      - name: Clear Azure CLI Cache
-        run: |
-          # Clear all Azure CLI cache and config
-          rm -rf ~/.azure/
-          rm -rf ~/.config/azure/
-          # Clear any potential system-wide cache
-          sudo rm -rf /tmp/.azure* || true
-          sudo rm -rf /var/tmp/.azure* || true
+      - name: Azure Login (fresh after CLI setup)
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Set AKS context
         run: |
           az aks get-credentials \
             --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
             --name "${{ secrets.AKS_CLUSTER_NAME }}" \
-            --overwrite-existing
+            --overwrite-existing \
+            --only-show-errors
 
       - name: Attach ACR (idempotent)
         env:
@@ -199,7 +199,8 @@ jobs:
           az aks update \
             --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
             --name "${{ secrets.AKS_CLUSTER_NAME }}" \
-            --attach-acr "$ACR_NAME"
+            --attach-acr "$ACR_NAME" \
+            --only-show-errors
 
       - name: Render K8s manifests with new tags
         run: |
