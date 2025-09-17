@@ -1,8 +1,6 @@
-# week08/.github/workflows/backend_ci.yml
+# week08/.github/workflows/combined_ci.yml
 
-name: Backend CI - Test, Build and Push Images to ACR
-
-# Adding comment to push and test Backend CI only
+name: Combined CI - Test, Build and Push Images to ACR
 
 # Trigger the workflow on pushes to the 'main' branch
 # You can also add 'pull_request:' to run on PRs
@@ -14,9 +12,20 @@ on:
   push:
     branches:
       - main
-    paths: # Only trigger if changes are in backend directories
+      - development
+    paths: # Only trigger if changes are in backend or frontend directories
       - "backend/**"
-      - ".github/workflows/backend_ci.yml" # Trigger if this workflow file changes
+      - "frontend/**"
+      - ".github/workflows/**" # Trigger if any workflow file changes
+
+  # Also run on PRs to main for CI validation
+  pull_request:
+    branches:
+      - main
+      - development
+    paths:
+      - "backend/**"
+      - "frontend/**"
 
 # Define global environment variables that can be used across jobs
 env:
@@ -141,6 +150,12 @@ jobs:
         run: |
           docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:latest ./backend/order_service/
           docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
+
+      # Build and Push Docker image for Frontend
+      - name: Build and Push Frontend Image
+        run: |
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
 
       # Logout from Azure for security (runs even if image push fails)
       - name: Logout from Azure
