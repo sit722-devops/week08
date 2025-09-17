@@ -58,6 +58,18 @@ jobs:
           cd k8s/
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
+        
+      - name: Deploy Product Service with updated image
+        run: |
+          kubectl set image deployment/product-service-w08e1 \
+            product-service-container=${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }} \
+            --namespace=default
+            
+      - name: Deploy Order Service with updated image
+        run: |
+          kubectl set image deployment/order-service-w08e1 \
+            order-service-container=${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }} \
+            --namespace=default
       
       - name: Wait for Backend LoadBalancer IPs
         run: |
