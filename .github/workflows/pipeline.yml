@@ -143,21 +143,29 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Harden Azure CLI (avoid invalid api-version)
+      - name: Harden Azure CLI (fix api-version issues)
         env:
-          # Prevent dynamic extension install; avoids preview bits changing api-version
           AZURE_EXTENSION_USE_DYNAMIC_INSTALL: no
         run: |
           set -e
-          # Remove aks-preview only if it is installed (quietly)
-          if az extension show -n aks-preview >/dev/null 2>&1; then
-            az extension remove -n aks-preview --only-show-errors
-          else
-            echo "aks-preview not installed; skipping removal"
-          fi
-          # Diagnostics (quiet)
+          
+          # Update Azure CLI to latest version
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          
+          # Remove problematic extensions
+          for ext in aks-preview containerapp; do
+            if az extension show -n "$ext" >/dev/null 2>&1; then
+              echo "Removing extension: $ext"
+              az extension remove -n "$ext" --only-show-errors
+            fi
+          done
+          
+          # Clear any cached API versions
+          rm -rf ~/.azure/commandIndex.json || true
+          
+          # Force refresh of metadata
           az version --only-show-errors
-          az extension list -o table --only-show-errors || true
+          az account list-locations --query "[0].name" -o tsv >/dev/null || true
 
       - name: Set AKS context
         run: |
