@@ -18,7 +18,7 @@ on:
       - "backend/**"
       - ".github/workflows/backend_ci.yml" # Trigger if this workflow file changes
 
-# Define global environment variables that can be used across job
+# Define global environment variables that can be used across jobs
 env:
   # ACR Login Server (e.g., myregistry.azurecr.io)
   # This needs to be set as a GitHub Repository Secret
