@@ -32,16 +32,13 @@ jobs:
       - name: Ensure namespace exists
         run: kubectl get ns "$NS" || kubectl create ns "$NS"
 
-      # This step NEVER fails the job; it logs and continues if you don't have Owner rights.
+      # Never fail on ACR attach; skip if you don't have Owner.
       - name: Attach ACR (idempotent; ignore if no rights)
         shell: bash
         run: |
           set +e
           az aks update --name "$AKS" --resource-group "$RG" --attach-acr "$ACR_NAME"
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            echo "No Owner rights to attach ACR; skipping (nodes already have AcrPull)."
-          fi
+          [ $? -ne 0 ] && echo "Skipping ACR attach (no Owner rights)" || true
           exit 0
 
       - name: Apply infra (ConfigMaps, Secrets, DBs)
@@ -57,10 +54,9 @@ jobs:
         run: |
           kubectl -n "$NS" apply -f product-service.yaml
           kubectl -n "$NS" apply -f order-service.yaml
-          echo "--- Services after deploy ---"
+          echo "--- services after apply ---"
           kubectl -n "$NS" get svc -o wide
 
-      # Auto-detect service names (falls back to product-service / order-service if needed)
       - name: Detect service names (product/order)
         id: detect_svcs
         shell: bash
@@ -68,11 +64,27 @@ jobs:
           set -e
           PROD_NAME=$(kubectl -n "$NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^product' | head -1 || true)
           ORD_NAME=$(kubectl -n "$NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^order'   | head -1 || true)
-          if [ -z "$PROD_NAME" ]; then PROD_NAME="product-service"; echo "Fallback PRODUCT_SVC=$PROD_NAME"; fi
-          if [ -z "$ORD_NAME" ]; then ORD_NAME="order-service";   echo "Fallback ORDER_SVC=$ORD_NAME";   fi
-          echo "Detected: product=${PROD_NAME} order=${ORD_NAME}"
+          [ -z "$PROD_NAME" ] && PROD_NAME="product-service"
+          [ -z "$ORD_NAME" ]  && ORD_NAME="order-service"
           echo "PRODUCT_SVC=$PROD_NAME" >> $GITHUB_ENV
           echo "ORDER_SVC=$ORD_NAME"   >> $GITHUB_ENV
+          echo "Detected PRODUCT_SVC=$PROD_NAME  ORDER_SVC=$ORD_NAME"
+
+      # 🔧 Force both services to LoadBalancer so they can get public IPs
+      - name: Ensure services are type LoadBalancer
+        shell: bash
+        run: |
+          for SVC in "$PRODUCT_SVC" "$ORDER_SVC"; do
+            TYPE=$(kubectl -n "$NS" get svc "$SVC" -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
+            if [ "$TYPE" != "LoadBalancer" ]; then
+              echo "Patching $SVC to type LoadBalancer (was '$TYPE')"
+              kubectl -n "$NS" patch svc "$SVC" --type merge -p '{"spec":{"type":"LoadBalancer"}}'
+            else
+              echo "$SVC already LoadBalancer"
+            fi
+          done
+          echo "--- services after patch ---"
+          kubectl -n "$NS" get svc -o wide
 
       - name: Wait for LoadBalancer IPs (<=10 min)
         shell: bash
@@ -89,7 +101,13 @@ jobs:
             fi
             sleep 5
           done
-          echo "Timed out waiting for external IPs"; exit 1
+          echo 'Timed out waiting for external IPs'
+          echo '--- describe services ---'
+          kubectl -n "$NS" describe svc "$PRODUCT_SVC" || true
+          kubectl -n "$NS" describe svc "$ORDER_SVC"   || true
+          echo '--- recent events ---'
+          kubectl -n "$NS" get events --sort-by=.lastTimestamp | tail -n 100 || true
+          exit 1
 
       - id: out_prod_ip
         run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
