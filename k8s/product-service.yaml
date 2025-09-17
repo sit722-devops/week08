@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: product-service-container
-          image: sit722azcr.azurecr.io/product_service:latest
+          image: sit722acr09.azurecr.io/product_service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
@@ -76,3 +76,4 @@ spec:
       port: 8000
       targetPort: 8000
   type: LoadBalancer
+
