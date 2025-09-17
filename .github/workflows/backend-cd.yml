@@ -4,10 +4,10 @@ on:
   workflow_dispatch: {}
 
 env:
-  RG:  ${{ vars.AKS_RESOURCE_GROUP }}
-  AKS: ${{ vars.AKS_CLUSTER_NAME }}
-  NS:  ${{ vars.AKS_NAMESPACE }}
-  ACR_NAME: ${{ vars.ACR_NAME }}
+  RG:        ${{ vars.AKS_RESOURCE_GROUP }}
+  AKS:       ${{ vars.AKS_CLUSTER_NAME }}
+  NS:        ${{ vars.AKS_NAMESPACE }}
+  ACR_NAME:  ${{ vars.ACR_NAME }}
 
 jobs:
   deploy_backend:
@@ -32,10 +32,17 @@ jobs:
       - name: Ensure namespace exists
         run: kubectl get ns "$NS" || kubectl create ns "$NS"
 
-      # You might not be Owner; allow failure and continue.
+      # This step NEVER fails the job; it logs and continues if you don't have Owner rights.
       - name: Attach ACR (idempotent; ignore if no rights)
-        continue-on-error: true
-        run: az aks update --name "$AKS" --resource-group "$RG" --attach-acr "$ACR_NAME"
+        shell: bash
+        run: |
+          set +e
+          az aks update --name "$AKS" --resource-group "$RG" --attach-acr "$ACR_NAME"
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "No Owner rights to attach ACR; skipping (nodes already have AcrPull)."
+          fi
+          exit 0
 
       - name: Apply infra (ConfigMaps, Secrets, DBs)
         working-directory: k8s
@@ -50,23 +57,28 @@ jobs:
         run: |
           kubectl -n "$NS" apply -f product-service.yaml
           kubectl -n "$NS" apply -f order-service.yaml
+          echo "--- Services after deploy ---"
           kubectl -n "$NS" get svc -o wide
 
+      # Auto-detect service names (falls back to product-service / order-service if needed)
       - name: Detect service names (product/order)
+        id: detect_svcs
         shell: bash
         run: |
           set -e
           PROD_NAME=$(kubectl -n "$NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^product' | head -1 || true)
-          ORD_NAME=$(kubectl -n "$NS"  get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^order'   | head -1 || true)
-          echo "Detected: product=${PROD_NAME:-<none>} order=${ORD_NAME:-<none>}"
-          echo PRODUCT_SVC=$PROD_NAME >> $GITHUB_ENV
-          echo ORDER_SVC=$ORD_NAME   >> $GITHUB_ENV
+          ORD_NAME=$(kubectl -n "$NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -E '^order'   | head -1 || true)
+          if [ -z "$PROD_NAME" ]; then PROD_NAME="product-service"; echo "Fallback PRODUCT_SVC=$PROD_NAME"; fi
+          if [ -z "$ORD_NAME" ]; then ORD_NAME="order-service";   echo "Fallback ORDER_SVC=$ORD_NAME";   fi
+          echo "Detected: product=${PROD_NAME} order=${ORD_NAME}"
+          echo "PRODUCT_SVC=$PROD_NAME" >> $GITHUB_ENV
+          echo "ORDER_SVC=$ORD_NAME"   >> $GITHUB_ENV
 
-      - name: Wait for LoadBalancer IPs (<=5 min)
+      - name: Wait for LoadBalancer IPs (<=10 min)
         shell: bash
         run: |
           set -e
-          for i in {1..60}; do
+          for i in {1..120}; do
             PROD_IP=$(kubectl -n "$NS" get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             ORD_IP=$(kubectl -n "$NS"  get svc "$ORDER_SVC"   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             echo "Attempt $i: product=${PROD_IP:-<none>} order=${ORD_IP:-<none>}"
