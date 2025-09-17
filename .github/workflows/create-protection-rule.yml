@@ -4,18 +4,22 @@ on:
   push:
     branches:
       - main
-      
+
 jobs:
   protect-main:
     runs-on: ubuntu-latest
     steps:
       - name: Set branch protection for main
-        uses: peter-evans/create-or-update-protection-rule@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
-          enforce_admins: true
-          required_pull_request_reviews: true
-          required_status_checks: true
-          required_status_checks_contexts: 'Backend CI - Test, Build and Push Images to ACR,Frontend CI'
-          restrictions: ''
+        run: |
+          gh api \
+            -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/branches/main/protection \
+            -f required_status_checks.strict=true \
+            -f required_status_checks.contexts[]="Backend CI - Test, Build and Push Images to ACR" \
+            -f required_status_checks.contexts[]="Frontend CI" \
+            -f enforce_admins=true \
+            -f required_pull_request_reviews.dismiss_stale_reviews=true \
+            -f required_pull_request_reviews.required_approving_review_count=1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
