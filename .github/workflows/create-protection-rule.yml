@@ -1,0 +1,21 @@
+name: Protect Main Branch
+
+on:
+  push:
+    branches:
+      - main
+      
+jobs:
+  protect-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set branch protection for main
+        uses: peter-evans/create-or-update-protection-rule@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+          enforce_admins: true
+          required_pull_request_reviews: true
+          required_status_checks: true
+          required_status_checks_contexts: 'Backend CI - Test, Build and Push Images to ACR,Frontend CI'
+          restrictions: ''
