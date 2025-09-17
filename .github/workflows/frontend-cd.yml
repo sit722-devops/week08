@@ -4,27 +4,34 @@ on:
   workflow_dispatch:
     inputs:
       aks_cluster_name:
-        description: "AKS cluster name"
+        description: AKS cluster name
         required: true
-        default: "sit722-w08-aks"
+        default: sit722-w08-aks
       aks_resource_group:
-        description: "AKS resource group"
+        description: AKS resource group
         required: true
-        default: "sit722-w08-rg"
-      aks_namespace:
-        description: "Kubernetes namespace"
-        required: true
-        default: "week08"
+        default: sit722-w08-rg
       aks_acr_name:
-        description: "ACR NAME (no .azurecr.io)"
+        description: ACR NAME (no .azurecr.io)
         required: true
-        default: "sit722w08acr304694959"
+        default: sit722w08acr304694959   # <-- use YOUR ACR
+      namespace:
+        description: K8s namespace
+        required: true
+        default: week08
+      deploy_name:
+        description: Frontend Deployment name
+        required: true
+        default: frontend-w08e1
+      service_name:
+        description: Frontend Service name
+        required: true
+        default: frontend-w08e1
 
 jobs:
   deploy_frontend:
     runs-on: ubuntu-latest
     environment: Production
-
     outputs:
       FRONTEND_IP: ${{ steps.out_fe_ip.outputs.external_ip }}
 
@@ -43,50 +50,39 @@ jobs:
             --name "${{ github.event.inputs.aks_cluster_name }}" \
             --overwrite-existing
 
-      - name: Attach ACR (safe if already attached / no Owner)
-        shell: bash
+      - name: Attach ACR (safe if already attached)
         run: |
-          set +e
           az aks update \
             --name "${{ github.event.inputs.aks_cluster_name }}" \
             --resource-group "${{ github.event.inputs.aks_resource_group }}" \
-            --attach-acr "${{ github.event.inputs.aks_acr_name }}"
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            echo "Skipping ACR attach (likely already attached or insufficient rights)."
-          fi
-          exit 0
+            --attach-acr "${{ github.event.inputs.aks_acr_name }}" || true
 
       - name: Apply frontend manifest
-        working-directory: k8s
         run: |
-          kubectl apply -f frontend.yaml
-          NS="${{ github.event.inputs.aks_namespace }}"
-          DEPLOY=$(kubectl -n "$NS" get deploy -l app=frontend -o jsonpath='{.items[0].metadata.name}')
-          echo "Detected deployment: $DEPLOY"
-          kubectl -n "$NS" rollout status "deploy/$DEPLOY" --timeout=180s || true
+          kubectl -n "${{ github.event.inputs.namespace }}" apply -f k8s/frontend.yaml
+          kubectl -n "${{ github.event.inputs.namespace }}" rollout status \
+            deploy/${{ github.event.inputs.deploy_name }} --timeout=180s || true
 
       - name: Wait for frontend external IP (≤5 min)
+        id: out_fe_ip
         shell: bash
         run: |
           set -e
-          NS="${{ github.event.inputs.aks_namespace }}"
-          SVC=$(kubectl -n "$NS" get svc -l app=frontend -o jsonpath='{.items[0].metadata.name}')
-          echo "Detected service: $SVC"
           for i in {1..60}; do
-            FE_IP=$(kubectl -n "$NS" get svc "$SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            FE_IP=$(kubectl -n "${{ github.event.inputs.namespace }}" \
+              get svc "${{ github.event.inputs.service_name }}" \
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
             echo "Attempt $i: frontend=$FE_IP"
             if [[ -n "$FE_IP" ]]; then
-              echo "FRONTEND_IP=$FE_IP" >> $GITHUB_ENV
+              echo "external_ip=$FE_IP" >> "$GITHUB_OUTPUT"
+              echo "FRONTEND_IP=$FE_IP" >> "$GITHUB_ENV"
               exit 0
             fi
             sleep 5
           done
           echo "Timed out waiting for frontend external IP"; exit 1
 
-      - id: out_fe_ip
-        run: echo "external_ip=${{ env.FRONTEND_IP }}" >> $GITHUB_OUTPUT
-
       - name: Logout Azure
         if: always()
         run: az logout
+
