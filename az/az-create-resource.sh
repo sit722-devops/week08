@@ -3,7 +3,7 @@ RESOURCE_GROUP=week09
 LOCATION=australiaeast   # or your preferred Azure region
 ACR_NAME=week09acr$RANDOM   # must be globally unique
 AKS_NAME=week09aks
-
+tea
 # Create resource group
 az group create --name $RESOURCE_GROUP --location $LOCATION
 
