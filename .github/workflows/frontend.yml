@@ -1,0 +1,49 @@
+name: Frontend Pipeline
+
+on:
+  pull_request:
+    branches: [ "dev" ]   # CI checks when PRs are made
+  push:
+    branches: [ "main" ]  # Deploy only when merged to main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20.19.0'
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('**/package-lock.json') }}
+      - run: npm ci
+      - run: npm run build --if-present
+      - run: npm test
+
+  build-and-deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Replace API base URLs dynamically (if needed)
+      - name: Update API URLs
+        run: |
+          sed -i "s|API_URL_PLACEHOLDER|${{ secrets.BACKEND_API_URL }}|g" frontend/src/config.js
+
+      - run: docker build -t frontend:${{ github.sha }} ./frontend
+      - run: az acr login --name ${{ secrets.ACR_NAME }}
+      - run: docker push ${{ secrets.ACR_NAME }}.azurecr.io/frontend:${{ github.sha }}
+
+      # Deploy to AKS (if cluster exists, else this step will skip/fail gracefully)
+      - name: Deploy to AKS
+        run: |
+          az aks get-credentials --resource-group ${{ secrets.AZ_RESOURCE_GROUP }} --name ${{ secrets.AKS_CLUSTER_NAME }} --overwrite-existing
+          kubectl apply -f k8s/frontend-deployment.yaml
+          kubectl apply -f k8s/frontend-service.yaml

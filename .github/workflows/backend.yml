@@ -1,0 +1,35 @@
+name: Backend Pipeline
+
+on:
+  pull_request:
+    branches: [ "dev" ]
+  push:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20.19.0'
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('**/package-lock.json') }}
+      - run: npm ci
+      - run: npm test
+
+  build-and-deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - run: docker build -t backend:${{ github.sha }} ./backend
+      - run: az acr login --name ${{ secrets.ACR_NAME }}
+      - run: docker push ${{ secrets.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
