@@ -3,9 +3,9 @@
 name: Frontend CI - Build & Push Image
 
 on:
+  workflow_call:
   # Manual trigger
-  workflow_dispatch:
-
+  
   # Automatically on pushes to main branch
   push:
     branches:
@@ -13,6 +13,7 @@ on:
     paths: # Only trigger if changes are in the frontend directory
       - 'frontend/**'
       - '.github/workflows/frontend_ci.yml' # Trigger if this workflow file changes
+  workflow_dispatch:
 
 # Define global environment variables that can be used across jobs
 env:
@@ -51,3 +52,4 @@ jobs:
     - name: Logout from Azure
       run: az logout
       if: always()
+

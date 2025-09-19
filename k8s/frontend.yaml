@@ -17,11 +17,11 @@ spec:
         app: frontend
     spec:
       containers:
-      - name: frontend-container
-        image: durgeshsamariya.azurecr.io/frontend:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 80
+        - name: frontend-container
+          image: sit722acr09.azurecr.io/frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
 ---
 apiVersion: v1
 kind: Service
@@ -37,3 +37,6 @@ spec:
       port: 80 # The port the service listens on inside the cluster
       targetPort: 80 # The port on the Pod (containerPort where Nginx runs)
   type: LoadBalancer # Exposes the service on a port on each Node's IP
+  loadBalancerIP: 4.195.20.92
+
+
