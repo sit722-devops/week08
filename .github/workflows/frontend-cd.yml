@@ -1,43 +1,19 @@
 # week08/.github/workflows/frontend-cd.yml
 
-name: CD - Deploy Frontend to AKS
+name: Frontend CD - Deploy to AKS (inject IPs + kubeconfig)
 
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
 on:
   workflow_dispatch:
     inputs:
       product_api_ip:
-        description: 'External IP of Product Service'
+        description: "http://<PRODUCT_EXTERNAL_IP>:8000"
         required: true
-        default: 'http://<ip_address>:8000'
       order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
+        description: "http://<ORDER_EXTERNAL_IP>:8001"
         required: true
-        default: 'http://<ip_address>:8001'
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<<resource_group_name>'
 
-  workflow_call:
-    inputs:
-      product_api_ip:
-        required: true
-        type: string
-      order_api_ip:
-        required: true
-        type: string
-      aks_cluster_name:
-        required: true
-        type: string
-      aks_resource_group:
-        required: true
-        type: string
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
 
 jobs:
   deploy_frontend:
@@ -45,49 +21,39 @@ jobs:
     environment: Production
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      # Login to Azure Container Registry (ACR)
-      - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-
-      - name: Inject Backend IPs into Frontend main.js
+      - name: Inject backend URLs into frontend/main.js
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
-          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
-          
-          # Display the modified file content for debugging
-          echo "--- Modified main.js content ---"
-          cat frontend/main.js
-          echo "---------------------------------"
+          sed -i "s|_PRODUCT_API_URL_|${{ github.event.inputs.product_api_ip }}|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|${{ github.event.inputs.order_api_ip }}|g"   frontend/main.js
+          echo "Preview of updated main.js (first 40 lines):"
+          sed -n '1,40p' frontend/main.js
 
-      # Build and Push Docker image for Frontend
-      - name: Build and Push Frontend Image
+      - name: Docker login to ACR (admin user)
+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_LOGIN_SERVER }} -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+
+      - name: Build & push frontend (with injected URLs)
         run: |
-          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
-          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest ./frontend
+          docker push  ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
 
-      - name: Set Kubernetes context (get AKS credentials)
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ inputs.aks_resource_group }}
-          cluster-name: ${{ inputs.aks_cluster_name }}
-
-      - name: Deploy Frontend to AKS
+      - name: Install kubectl
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
-          cd k8s/
-          # Ensure frontend-service.yaml is configured with your ACR
-          kubectl apply -f frontend.yaml
+          curl -fsSL -o kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
 
-      - name: Logout from Azure (AKS deployment)
-        run: az logout
+      - name: Write kubeconfig from secret
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 --decode > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          kubectl cluster-info
+
+      - name: Inject ACR into frontend manifest & deploy
+        run: |
+          sed -i "s|_ACR_LOGIN_SERVER_|${{ env.ACR_LOGIN_SERVER }}|g" k8s/frontend.yaml
+          kubectl apply -f k8s/frontend.yaml
+          kubectl get svc -o wide
