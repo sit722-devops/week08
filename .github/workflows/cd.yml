@@ -1,0 +1,42 @@
+name: CD - Publish Images to GHCR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-backend:
+    uses: ./.github/workflows/reusable_build_and_publish.yml
+    with:
+      app_path: backend/product_service
+      image_name: product_service
+    secrets: inherit
+
+  publish-backend-order:
+    needs: publish-backend
+    uses: ./.github/workflows/reusable_build_and_publish.yml
+    with:
+      app_path: backend/order_service
+      image_name: order_service
+    secrets: inherit
+
+  publish-frontend:
+    needs: publish-backend-order
+    uses: ./.github/workflows/reusable_build_and_publish.yml
+    with:
+      app_path: frontend
+      image_name: frontend
+    secrets: inherit

@@ -1,0 +1,44 @@
+name: CI - PR Validation (No Push)
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-frontend:
+    name: Frontend (build image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: false
+
+  build-backend:
+    strategy:
+      matrix:
+        service: [product_service, order_service]
+    runs-on: ubuntu-latest
+    name: Backend - ${{ matrix.service }} (build image)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend/${{ matrix.service }}
+          push: false
