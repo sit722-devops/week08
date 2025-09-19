@@ -1,5 +1,5 @@
 # Week 08 - Continuous Delivery (CD) to AKS with GitHub Actions
-# for testinggg
+# for testingggggg
 This example demonstrates a robust Continuous Delivery (CD) pipeline using GitHub Actions to deploy your e-commerce microservices and frontend application to an Azure Kubernetes Service (AKS) cluster. Building upon Week 07's Continuous Integration (CI), this setup automates the final step of getting your tested Docker images from Azure Container Registry (ACR) onto your Kubernetes cluster.
 
 ## 🚀 Purpose
