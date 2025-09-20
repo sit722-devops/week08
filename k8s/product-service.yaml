@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: product-service-container
-        image: durgeshsamariya.azurecr.io/product_service:latest
+        image: acrweek08pramodya.azurecr.io/product_service:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
@@ -75,4 +75,4 @@ spec:
     - protocol: TCP
       port: 8000
       targetPort: 8000
-  type: LoadBalancer
+  type: ClusterIP

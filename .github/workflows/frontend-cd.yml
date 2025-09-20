@@ -1,43 +1,16 @@
-# week08/.github/workflows/frontend-cd.yml
-
 name: CD - Deploy Frontend to AKS
 
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
 on:
   workflow_dispatch:
     inputs:
-      product_api_ip:
-        description: 'External IP of Product Service'
-        required: true
-        default: 'http://<ip_address>:8000'
-      order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
-        required: true
-        default: 'http://<ip_address>:8001'
       aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
+        description: 'AKS cluster name'
         required: true
-        default: '<aks_name>'
+        default: 'aks-week08-pramodya'
       aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
+        description: 'AKS resource group'
         required: true
-        default: '<<resource_group_name>'
-
-  workflow_call:
-    inputs:
-      product_api_ip:
-        required: true
-        type: string
-      order_api_ip:
-        required: true
-        type: string
-      aks_cluster_name:
-        required: true
-        type: string
-      aks_resource_group:
-        required: true
-        type: string
+        default: 'rg-week08-pramodya'
 
 jobs:
   deploy_frontend:
@@ -48,46 +21,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Login to Azure Container Registry (ACR)
-      - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+      # Login to ACR (same way as Backend CI)
+      - name: Docker login to ACR
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.AZURE_ACR_LOGIN_SERVER }}   # e.g. acrweek08pramodya.azurecr.io
+          username:     ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+          password:     ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
 
-      - name: Inject Backend IPs into Frontend main.js
-        run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
-          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
-          
-          # Display the modified file content for debugging
-          echo "--- Modified main.js content ---"
-          cat frontend/main.js
-          echo "---------------------------------"
-
-      # Build and Push Docker image for Frontend
+      # Build & push the frontend image
       - name: Build and Push Frontend Image
         run: |
-          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
-          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
+          docker build -t ${{ secrets.AZURE_ACR_LOGIN_SERVER }}/frontend:latest ./frontend
+          docker push    ${{ secrets.AZURE_ACR_LOGIN_SERVER }}/frontend:latest
 
-      - name: Set Kubernetes context (get AKS credentials)
+      # Set kube context
+      - name: Set AKS context
         uses: azure/aks-set-context@v3
         with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
           resource-group: ${{ inputs.aks_resource_group }}
-          cluster-name: ${{ inputs.aks_cluster_name }}
+          cluster-name:   ${{ inputs.aks_cluster_name }}
 
-      - name: Deploy Frontend to AKS
+      # Apply (ClusterIP) service + deployment if needed
+      - name: Apply frontend manifest
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
-          cd k8s/
-          # Ensure frontend-service.yaml is configured with your ACR
-          kubectl apply -f frontend.yaml
+          kubectl apply -f k8s/frontend.yaml
+          kubectl get deploy,svc -o wide
 
-      - name: Logout from Azure (AKS deployment)
+      # Rollout to pick up the new image tag (latest)
+      - name: Restart frontend deployment
+        run: |
+          kubectl rollout restart deployment/frontend
+          kubectl rollout status  deployment/frontend --timeout=300s
+
+      - name: Logout
+        if: always()
         run: az logout
