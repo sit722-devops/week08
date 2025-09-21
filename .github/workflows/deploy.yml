@@ -4,8 +4,12 @@ name: Full Deployment Pipeline (Backend + Frontend)
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend_ci.yml'
+  pull_request:
+    branches: [main]
 
 jobs:
   # 1. Run Backend CI (tests + build + push images)
