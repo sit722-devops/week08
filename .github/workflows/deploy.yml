@@ -1,6 +1,5 @@
 # week08/.github/workflows/deploy.yml
 name: Full Deployment Pipeline (Backend + Frontend)
-
 on:
   workflow_dispatch:
   push:
@@ -26,7 +25,6 @@ jobs:
       aks_resource_group: week09-rg
       aks_acr_name: week09acrabhi
     secrets: inherit
-
   # 3. Run Frontend CI (build + push image after backend deploy succeeds)
   frontend_ci:
     needs: backend_cd
