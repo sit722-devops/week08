@@ -70,11 +70,12 @@ jobs:
           cat frontend/main.js
           echo "---------------------------------"
 
+
       # Build and Push Docker image for Frontend
       - name: Build and Push Frontend Image
         run: |
-          docker build -t week09acrabhi/frontend:latest ./frontend/
-          docker push week09acrabhi/frontend:latest
+          docker build -t week09acrabhi.azurecr.io/frontend:latest ./frontend/
+          docker push week09acrabhi.azurecr.io/frontend:latest
 
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
