@@ -1,0 +1,41 @@
+# week08/.github/workflows/deploy.yml
+name: Full Deployment Pipeline (Backend + Frontend)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  # 1. Run Backend CI (tests + build + push images)
+  backend_ci:
+    uses: ./.github/workflows/backend_ci.yml
+    secrets: inherit
+
+  # 2. Run Backend CD (deploy to AKS after backend CI succeeds)
+  backend_cd:
+    needs: backend_ci
+    uses: ./.github/workflows/backend-cd.yml
+    with:
+      aks_cluster_name: week09-aks
+      aks_resource_group: week09-rg
+      aks_acr_name: week09acrabhi
+    secrets: inherit
+
+  # 3. Run Frontend CI (build + push image after backend deploy succeeds)
+  frontend_ci:
+    needs: backend_cd
+    uses: ./.github/workflows/frontend_ci.yml
+    secrets: inherit
+
+  # 4. Run Frontend CD (deploy to AKS after frontend CI succeeds)
+  frontend_cd:
+    needs: frontend_ci
+    uses: ./.github/workflows/frontend-cd.yml
+    with:
+      product_api_ip: ${{ needs.backend_cd.outputs.PRODUCT_API_IP }}
+      order_api_ip: ${{ needs.backend_cd.outputs.ORDER_API_IP }}
+      aks_cluster_name: week09-aks
+      aks_resource_group: week09-rg
+    secrets: inherit
