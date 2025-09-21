@@ -5,6 +5,7 @@ name: Frontend CI - Build & Push Image
 on:
   # Manual trigger
   workflow_dispatch:
+  workflow_call:
 
   # Automatically on pushes to main branch
   push:

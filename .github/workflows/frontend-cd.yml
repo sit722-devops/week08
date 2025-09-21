@@ -23,6 +23,7 @@ on:
         description: 'Resource Group of the AKS Cluster'
         required: true
         default: '<<resource_group_name>'
+  workflow_call:
 
   workflow_call:
     inputs:

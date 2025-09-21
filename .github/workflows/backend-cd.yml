@@ -15,6 +15,7 @@ on:
         description: 'Name of ACR'
         required: true
         default: '<acr_name>'
+  workflow_call:
 
 jobs:
   deploy_backend:
