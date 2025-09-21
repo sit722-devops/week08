@@ -1,0 +1,118 @@
+name: Release - Build, Tag, Scan (Simulated Push)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      simulate:
+        description: 'Run without pushing to ACR?'
+        default: 'true'
+        required: true
+        type: choice
+        options: ['true','false']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # for later real Azure OIDC login
+    env:
+      # Optional ACR secrets (ignored when simulate=true)
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Metadata • product
+        id: meta_p
+        uses: docker/metadata-action@v5
+        with:
+          images: product-service
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Metadata • order
+        id: meta_o
+        uses: docker/metadata-action@v5
+        with:
+          images: order-service
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build product (local)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend/product_service
+          push: false
+          load: true
+          tags: ${{ steps.meta_p.outputs.tags }}
+          labels: ${{ steps.meta_p.outputs.labels }}
+
+      - name: Build order (local)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend/order_service
+          push: false
+          load: true
+          tags: ${{ steps.meta_o.outputs.tags }}
+          labels: ${{ steps.meta_o.outputs.labels }}
+
+      - name: Trivy scan • product
+        uses: aquasecurity/trivy-action@0.22.0
+        with:
+          image-ref: ${{ fromJSON(steps.meta_p.outputs.json).tags[0] }}
+          format: 'table'
+          exit-code: '0'
+
+      - name: Trivy scan • order
+        uses: aquasecurity/trivy-action@0.22.0
+        with:
+          image-ref: ${{ fromJSON(steps.meta_o.outputs.json).tags[0] }}
+          format: 'table'
+          exit-code: '0'
+
+      # Real push only if you later set simulate=false and have ACR live
+      - name: Decide simulate
+        id: sim
+        run: echo "simulate=${{ inputs.simulate || 'true' }}" >> $GITHUB_OUTPUT
+
+      - name: Azure Login (OIDC)
+        if: steps.sim.outputs.simulate == 'false'
+        uses: azure/login@v2
+        with:
+          client-id:     ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:     ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        if: steps.sim.outputs.simulate == 'false' && env.ACR_NAME != ''
+        run: az acr login --name "${{ env.ACR_NAME }}"
+
+      - name: Retag & Push product → ACR
+        if: steps.sim.outputs.simulate == 'false' && env.ACR_LOGIN_SERVER != ''
+        run: |
+          for TAG in ${{ steps.meta_p.outputs.tags }}; do
+            docker tag "$TAG" "${{ env.ACR_LOGIN_SERVER }}/product:${TAG#*:}"
+            docker push "${{ env.ACR_LOGIN_SERVER }}/product:${TAG#*:}"
+          done
+
+      - name: Retag & Push order → ACR
+        if: steps.sim.outputs.simulate == 'false' && env.ACR_LOGIN_SERVER != ''
+        run: |
+          for TAG in ${{ steps.meta_o.outputs.tags }}; do
+            docker tag "$TAG" "${{ env.ACR_LOGIN_SERVER }}/order:${TAG#*:}"
+            docker push "${{ env.ACR_LOGIN_SERVER }}/order:${TAG#*:}"
+          done
