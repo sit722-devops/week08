@@ -1,0 +1,37 @@
+name: Complete E-Commerce Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # Backend Pipeline
+  backend-pipeline:
+    uses: ./.github/workflows/backend-pipeline.yml
+    secrets: inherit
+
+  # Frontend Pipeline (depends on backend for API IPs)
+  frontend-pipeline:
+    needs: backend-pipeline
+    uses: ./.github/workflows/frontend-pipeline.yml
+    secrets: inherit
+    with:
+      product_api_ip: ${{ needs.backend-pipeline.outputs.product_ip || 'http://localhost:8000' }}
+      order_api_ip: ${{ needs.backend-pipeline.outputs.order_ip || 'http://localhost:8001' }}
+      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+
+  # Notification Job
+  notify-completion:
+    needs: [backend-pipeline, frontend-pipeline]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Notify Pipeline Status
+        run: |
+          if [[ "${{ needs.backend-pipeline.result }}" == "success" && "${{ needs.frontend-pipeline.result }}" == "success" ]]; then
+            echo "✅ Pipeline completed successfully!"
+          else
+            echo "❌ Pipeline failed. Backend: ${{ needs.backend-pipeline.result }}, Frontend: ${{ needs.frontend-pipeline.result }}"
+            exit 1

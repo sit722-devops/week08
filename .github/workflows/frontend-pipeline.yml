@@ -1,0 +1,126 @@
+name: Frontend Pipeline - CI/CD
+
+on:
+  push:
+    branches: [ main, develop, 'feature/**' ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-pipeline.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'frontend/**'
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+  NODE_VERSION: '18'
+
+jobs:
+  # Stage 1: Build and Test Frontend
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+            # Lint
+            if npm run lint --dry-run 2>/dev/null; then
+              npm run lint
+            fi
+            # Test
+            if npm run test --dry-run 2>/dev/null; then
+              npm run test
+            fi
+          else
+            echo "No package.json found, skipping npm steps"
+
+  # Stage 2: Build and Push Frontend Docker Image
+  build-frontend:
+    needs: test-frontend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Azure Container Registry
+        run: |
+          echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+
+      - name: Build and Push Frontend Image
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            TAG="prod-${{ env.IMAGE_TAG }}"
+          else
+            TAG="staging-${{ env.IMAGE_TAG }}"
+          fi
+
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:$TAG ./frontend/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:$TAG
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()
+
+  # Stage 3: Deploy Frontend to AKS
+  deploy-frontend:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS Context
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --name ${{ secrets.CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Deploy Frontend
+        run: |
+          cd k8s/
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            TAG="prod-${{ env.IMAGE_TAG }}"
+          else
+            TAG="staging-${{ env.IMAGE_TAG }}"
+          fi
+
+          sed -i "s|latest|$TAG|g" frontend.yaml
+
+          # Replace backend API placeholders with actual IPs from backend pipeline
+          PRODUCT_API=${{ needs.backend-pipeline.outputs.product_ip || 'http://localhost:8000' }}
+          ORDER_API=${{ needs.backend-pipeline.outputs.order_ip || 'http://localhost:8001' }}
+
+          sed -i "s|{{PRODUCT_API}}|$PRODUCT_API|g" frontend.yaml
+          sed -i "s|{{ORDER_API}}|$ORDER_API|g" frontend.yaml
+
+          kubectl apply -f frontend.yaml
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()
