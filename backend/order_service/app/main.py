@@ -409,3 +409,5 @@ def get_order_items(order_id: int, db: Session = Depends(get_db)):
         f"Order Service: Retrieved {len(order.items)} items for order {order_id}."
     )
     return order.items
+
+#test 
