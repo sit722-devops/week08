@@ -68,6 +68,7 @@ jobs:
           cd k8s/
           kubectl apply -f frontend.yaml
 
-      - name: Azure Logout (Reusable)
+      # Logout from Azure for security (runs even if image push fails)
+      - name: Logout from Azure
+        run: az logout
         if: always()
-        uses: ./.github/workflows/azure-logout.yml

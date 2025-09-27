@@ -93,6 +93,7 @@ jobs:
         id: set_order_ip
         run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
 
-      - name: Azure Logout (Reusable)
+      # Logout from Azure for security (runs even if image push fails)
+      - name: Logout from Azure
+        run: az logout
         if: always()
-        uses: ./.github/workflows/azure-logout.yml
