@@ -2,7 +2,7 @@
 #this is for trigger the pipeline
 #this is for trigger the pipeline in 9.2C
 #this is re testing
-#test
+#test 1
 
 name: Backend CI - Test, Build and Push Images to ACR
 
