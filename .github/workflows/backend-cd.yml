@@ -39,7 +39,7 @@ jobs:
           az aks update \
             --name ${{ secrets.AKS_CLUSTER_NAME }} \
             --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
-            --attach-acr ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+            --attach-acr ${{ secrets.AZURE_CONTAINER_REGISTRY_NAME }}
 
       - name: Deploy Backend Infrastructure
         run: |
