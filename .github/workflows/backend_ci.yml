@@ -1,9 +1,8 @@
 # week08/.github/workflows/backend_ci.yml
 #this is for trigger the pipeline
-#this is for trigger the pipeline in 9.2C
-#this is re testing
-#test 1234
-#testing
+#test the workflow
+
+
 name: Backend CI - Test, Build and Push Images to ACR
 
 # Trigger the workflow on pushes to the 'main' branch
