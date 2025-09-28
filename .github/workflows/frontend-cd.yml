@@ -1,27 +1,11 @@
 # week08/.github/workflows/frontend-cd.yml
-
 name: CD - Deploy Frontend to AKS
 
 on:
+  # Allow manual trigger
   workflow_dispatch:
-    inputs:
-      product_api_ip:
-        description: 'External IP of Product Service'
-        required: true
-        default: 'http://<ip_address>:8000'
-      order_api_ip:
-        description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
-        required: true
-        default: 'http://<ip_address>:8001'
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: '<aks_name>'
-      aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
-        required: true
-        default: '<resource_group_name>'
 
+  # Automatically run after Frontend CI completes successfully
   workflow_run:
     workflows: ["Frontend CI - Build & Push Image"]
     types:
@@ -37,31 +21,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Azure login
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # Login to Azure Container Registry
       - name: Login to Azure Container Registry
         run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
+      # Inject Backend IPs into Frontend main.js
       - name: Inject Backend IPs into Frontend main.js
         run: |
           echo "Injecting Product and Order IPs..."
           sed -i "s|_PRODUCT_API_URL_|${{ github.event.workflow_run.outputs.PRODUCT_API_IP }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ github.event.workflow_run.outputs.ORDER_API_IP }}|g" frontend/main.js
+          echo "--- Modified main.js ---"
           cat frontend/main.js
+          echo "------------------------"
 
+      # Build and Push Docker image for Frontend
       - name: Build and Push Frontend Image
         run: |
           docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
           docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
 
+      # Set Kubernetes context (from secrets instead of workflow inputs)
       - name: Set Kubernetes context
         uses: azure/aks-set-context@v3
         with:
-          resource-group: ${{ github.event.inputs.aks_resource_group }}
-          cluster-name: ${{ github.event.inputs.aks_cluster_name }}
+          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
       - name: Deploy Frontend to AKS
         run: |
