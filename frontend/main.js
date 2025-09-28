@@ -1,4 +1,5 @@
 // week08/frontend/main.js
+// this line to trigger frontend CI
 
 document.addEventListener('DOMContentLoaded', () => {
     // API endpoints for the Product and Order services.
