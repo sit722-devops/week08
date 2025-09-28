@@ -23,7 +23,7 @@ on:
         default: '<resource_group_name>'
 
   workflow_run:
-    workflows: ["CD - Deploy Backend Services to AKS"]
+    workflows: ["Frontend CI - Build & Push Image"]
     types:
       - completed
 
