@@ -48,11 +48,12 @@ jobs:
           docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
 
       # Set Kubernetes context (from secrets instead of workflow inputs)
-      - name: Set Kubernetes context
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
-          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+      - name: Set Kubernetes context (get AKS credentials)
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
+            --name ${{ secrets.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
 
       - name: Deploy Frontend to AKS
         run: |
