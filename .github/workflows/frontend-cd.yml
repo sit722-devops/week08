@@ -7,7 +7,7 @@ on:
 
   # Automatically run after Frontend CI completes successfully
   workflow_run:
-    workflows: ["Frontend CI - Build & Push Image"]
+    workflows: ["CD - Deploy Backend Services to AKS"]
     types:
       - completed
 
