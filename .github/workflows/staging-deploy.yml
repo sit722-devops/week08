@@ -1,0 +1,60 @@
+name: Staging - ephemeral deploy
+ 
+on:
+  workflow_run:
+    workflows: ["CI - testing"]
+    types: ["completed"]
+ 
+permissions:
+  id-token: write
+  contents: read
+ 
+jobs:
+  deploy-staging:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: staging
+ 
+    steps:
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+ 
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: week10-rg
+          cluster-name: week10-aks
+ 
+      - uses: actions/checkout@v4
+ 
+      - name: Compute image ref
+        run: |
+          IMAGE=week10abhiacr.azurecr.io/app:${{ github.event.workflow_run.head_sha }}
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+ 
+      - name: Create ephemeral namespace
+        run: |
+          NS=staging-${{ github.run_number }}
+          echo "NS=$NS" >> $GITHUB_ENV
+          kubectl create namespace $NS
+ 
+      - name: Deploy manifests
+        run: |
+          kubectl -n $NS apply -f k8s/base
+          kubectl -n $NS set image deploy/app app=$IMAGE
+ 
+      - name: Wait for rollout
+        run: kubectl -n $NS rollout status deploy/app --timeout=300s
+ 
+      - name: Smoke test
+        run: |
+          kubectl -n $NS get pods -o wide
+          kubectl -n $NS get svc -o wide
+ 
+      - name: Cleanup staging
+        if: always()
+        run: kubectl delete ns $NS --wait=true

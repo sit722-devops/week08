@@ -1,0 +1,60 @@
+name: CI - testing
+ 
+on:
+  push:
+    branches: ["testing"]
+ 
+permissions:
+  id-token: write
+  contents: read
+ 
+jobs:
+  test-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+ 
+      # Example Node.js tests (adapt if using Python/other stack)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+ 
+      - name: Run backend tests (skip if not present)
+        run: |
+          if [ -f backend/package.json ]; then
+            cd backend
+            npm ci
+            npm test -- --ci
+          else
+            echo "No backend/package.json found, skipping..."
+          fi
+ 
+      - name: Run frontend tests (skip if not present)
+        run: |
+          if [ -f frontend/package.json ]; then
+            cd frontend
+            npm ci
+            npm test -- --ci
+          else
+            echo "No frontend/package.json found, skipping..."
+          fi
+ 
+      # Azure login with OIDC
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+ 
+      - name: Login to ACR
+        run: az acr login --name week10abhiacr
+ 
+      - name: Build & tag image
+        run: |
+          IMAGE=week10abhiacr.azurecr.io/app:${{ github.sha }}
+          docker build -t $IMAGE .
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+ 
+      - name: Push image
+        run: docker push $IMAGE
