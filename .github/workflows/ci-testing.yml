@@ -50,11 +50,20 @@ jobs:
       - name: Login to ACR
         run: az acr login --name week10abhiacr
  
-      - name: Build & tag image
+      - name: Build & Push Product Service Image
         run: |
-          IMAGE=week10abhiacr.azurecr.io/app:${{ github.sha }}
-          docker build -t $IMAGE .
-          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
- 
-      - name: Push image
-        run: docker push $IMAGE
+          IMAGE=${{ vars.ACR_LOGIN_SERVER }}/product_service:${{ github.sha }}
+          docker build -t $IMAGE ./backend/product_service
+          docker push $IMAGE
+      
+      - name: Build & Push Order Service Image
+        run: |
+          IMAGE=${{ vars.ACR_LOGIN_SERVER }}/order_service:${{ github.sha }}
+          docker build -t $IMAGE ./backend/order_service
+          docker push $IMAGE
+      
+      - name: Build & Push Frontend Image
+        run: |
+          IMAGE=${{ vars.ACR_LOGIN_SERVER }}/frontend:${{ github.sha }}
+          docker build -t $IMAGE ./frontend
+          docker push $IMAGE
