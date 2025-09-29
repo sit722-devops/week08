@@ -40,13 +40,13 @@ jobs:
  
       - name: Deploy base manifests
         run: |
-          kubectl -n $NS apply -f k8s/base/configmaps.yaml
-          kubectl -n $NS apply -f k8s/base/secrets.yaml
-          kubectl -n $NS apply -f k8s/base/product-db.yaml
-          kubectl -n $NS apply -f k8s/base/order-db.yaml
-          kubectl -n $NS apply -f k8s/base/product-service.yaml
-          kubectl -n $NS apply -f k8s/base/order-service.yaml
-          kubectl -n $NS apply -f k8s/base/frontend.yaml
+          kubectl -n $NS apply -f week08/k8s/base/configmaps.yaml
+          kubectl -n $NS apply -f week08/k8s/base/secrets.yaml
+          kubectl -n $NS apply -f week08/k8s/base/product-db.yaml
+          kubectl -n $NS apply -f week08/k8s/base/order-db.yaml
+          kubectl -n $NS apply -f week08/k8s/base/product-service.yaml
+          kubectl -n $NS apply -f week08/k8s/base/order-service.yaml
+          kubectl -n $NS apply -f week08/k8s/base/frontend.yaml
  
       - name: Override images with commit SHA
         run: |
