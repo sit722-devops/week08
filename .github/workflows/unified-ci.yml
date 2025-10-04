@@ -1,119 +1,144 @@
-name: CI/CD Pipeline for SIT722
+# .github/workflows/unified-ci.yml
+name: Unified CI - Backend & Frontend
 
-# Trigger pipeline when code is pushed to `testing` branch
 on:
+  workflow_dispatch:
   push:
     branches:
-      - testing  # Trigger pipeline on pushing to `testing` branch
+      - testing
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/ci.yml'
+
   pull_request:
     branches:
-      - main  # Trigger pipeline on pull request to `main` branch
+      - main
+      - development
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/ci.yml'
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
 
 jobs:
-  # Stage 1: CI pipeline for testing, building, and pushing Docker images
-  ci-pipeline:
+  backend:
     runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, 'backend') || contains(join(github.event.commits.*.modified, ''), 'backend/')
+    services:
+      product_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: products
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      order_db:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orders
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      # Set up Docker Buildx for building multi-platform images
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-      # Set up Azure CLI to interact with Azure services
-      - name: Set up Azure CLI
-        uses: azure/setup-azure-cli@v1
-
-      # Log in to Azure and ACR using credentials stored in GitHub secrets
-      - name: Log in to Azure and ACR
+      - name: Install dependencies
         run: |
-          echo ${{ secrets.AZURE_CREDENTIALS }} | az ad sp create-for-rbac --role="Contributor" --scopes="/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.AZURE_RESOURCE_GROUP }}" > azure_credentials.json
-          az login --service-principal -u $(jq -r .appId azure_credentials.json) -p $(jq -r .password azure_credentials.json) --tenant $(jq -r .tenant azure_credentials.json)
-          az acr login --name ${{ secrets.ACR_NAME }}
+          pip install --upgrade pip
+          for req in backend/*/requirements.txt; do
+            echo "Installing $req"
+            pip install -r "$req"
+          done
+          pip install pytest httpx
 
-      # Build and push Docker images to ACR if tests pass
-      - name: Build Docker images and push to ACR
+      - name: Run product_service tests
+        working-directory: backend/product_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: products
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: pytest tests --maxfail=1 --disable-warnings -q
+
+      - name: Run order_service tests
+        working-directory: backend/order_service
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+          POSTGRES_DB: orders
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: pytest tests --maxfail=1 --disable-warnings -q
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+
+      - name: Build & Push Product Service
         run: |
-          docker buildx build --file Dockerfile.product_service --tag ${{ secrets.ACR_NAME }}.azurecr.io/product_service:latest --push .
-          docker buildx build --file Dockerfile.order_service --tag ${{ secrets.ACR_NAME }}.azurecr.io/order_service:latest --push .
-          docker buildx build --file Dockerfile.frontend --tag ${{ secrets.ACR_NAME }}.azurecr.io/frontend:latest --push .
+          TAG=${{ github.ref_name == 'main' && 'latest' || format('dev-{0}', github.sha) }}
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:$TAG ./backend/product_service
+          docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:$TAG
 
-      # Run tests for product service
-      - name: Run tests for Product Service
+      - name: Build & Push Order Service
         run: |
-          docker run --rm ${{ secrets.ACR_NAME }}.azurecr.io/product_service:latest pytest --maxfail=5 --disable-warnings -q
+          TAG=${{ github.ref_name == 'main' && 'latest' || format('dev-{0}', github.sha) }}
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:$TAG ./backend/order_service
+          docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:$TAG
 
-      # Run tests for order service
-      - name: Run tests for Order Service
-        run: |
-          docker run --rm ${{ secrets.ACR_NAME }}.azurecr.io/order_service:latest pytest --maxfail=5 --disable-warnings -q
+      - name: Logout Azure
+        if: always()
+        run: az logout
 
-      # Run tests for frontend service
-      - name: Run tests for Frontend Service
-        run: |
-          docker run --rm ${{ secrets.ACR_NAME }}.azurecr.io/frontend:latest pytest --maxfail=5 --disable-warnings -q
-
-      # If tests pass, proceed to deploy to staging environment
-      - name: Trigger Staging Deployment
-        if: success()
-        run: |
-          echo "Tests passed! Triggering staging deployment."
-
-  # Stage 2: Staging Environment deployment and testing
-  staging-deployment:
-    needs: ci-pipeline
+  # ---------------- FRONTEND JOB ----------------
+  frontend:
     runs-on: ubuntu-latest
-    if: success()  # Proceed only if the CI pipeline was successful
+    if: contains(github.event.head_commit.message, 'frontend') || contains(join(github.event.commits.*.modified, ''), 'frontend/')
 
     steps:
-      # Log in to Azure and set up kubectl (Azure Kubernetes Service)
-      - name: Log in to Azure and AKS
-        uses: azure/setup-azure-cli@v1
-        run: |
-          echo ${{ secrets.AZURE_CREDENTIALS }} | az ad sp create-for-rbac --role="Contributor" --scopes="/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.AZURE_RESOURCE_GROUP }}" > azure_credentials.json
-          az login --service-principal -u $(jq -r .appId azure_credentials.json) -p $(jq -r .password azure_credentials.json) --tenant $(jq -r .tenant azure_credentials.json)
-          az aks get-credentials --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AKS_CLUSTER_NAME }}
+      - uses: actions/checkout@v4
 
-      # Apply Kubernetes YAML files to deploy to staging environment
-      - name: Deploy to Staging Environment
-        run: |
-          kubectl apply -f k8s/  # Deploy services using the Kubernetes YAML files
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Wait for the deployment to stabilize (optional: you could implement a health check here)
-      - name: Wait for Deployment
-        run: |
-          kubectl rollout status deployment/product-service-w08e1
-          kubectl rollout status deployment/order-service-w08e1
-          kubectl rollout status deployment/frontend
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
 
-      # Perform manual acceptance tests (or automated tests) in the staging environment
-      - name: Run acceptance tests on Staging Environment
+      - name: Build & Push Frontend
         run: |
-          echo "Running acceptance tests on staging..."
+          TAG=${{ github.ref_name == 'main' && 'latest' || format('dev-{0}', github.sha) }}
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:$TAG ./frontend
+          docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:$TAG
 
-      # Clean up staging environment after testing
-      - name: Clean up Staging Environment
-        run: |
-          kubectl delete -f k8s/ # Delete the staging environment after testing
-
-  # Stage 3: Production Deployment after merging to `main`
-  production-deployment:
-    needs: staging-deployment
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'  # Only run on merge to `main` branch
-
-    steps:
-      # Log in to Azure and AKS
-      - name: Log in to Azure and AKS for Production
-        uses: azure/setup-azure-cli@v1
-        run: |
-          echo ${{ secrets.AZURE_CREDENTIALS }} | az ad sp create-for-rbac --role="Contributor" --scopes="/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.AZURE_RESOURCE_GROUP }}" > azure_credentials.json
-          az login --service-principal -u $(jq -r .appId azure_credentials.json) -p $(jq -r .password azure_credentials.json) --tenant $(jq -r .tenant azure_credentials.json)
-          az aks get-credentials --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AKS_CLUSTER_NAME }}
-
-      # Deploy to Production
-      - name: Deploy to Production Environment
-        run: |
-          kubectl apply -f k8s/  # Apply Kubernetes YAML files to deploy to production
+      - name: Logout Azure
+        if: always()
+        run: az logout
