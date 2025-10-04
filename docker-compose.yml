@@ -54,7 +54,7 @@ services:
     environment:
       POSTGRES_HOST: product_db # Connects to the 'product_db' service within Docker network
       AZURE_STORAGE_ACCOUNT_NAME: week08 # Replace with your Azure Storage account name
-      AZURE_STORAGE_ACCOUNT_KEY: lVxmnijthHi8u0YyFq/yz60P6kvp91baoKyGs9SunxuQMtOluxM/adNkLdmgrCCS0bpqAh3TBJqY+ASttcnszA== # Replace with your Azure Storage account key
+      AZURE_STORAGE_ACCOUNT_KEY: yoPFslu06OVWDl0rLA9pABgzKhjs/k7Q1JwbXX4ya+N7vWOfcpUEi2BkgNUfqLrVnsz4aV3DkLIT+AStmfRIFQ== # Replace with your Azure Storage account key
       AZURE_STORAGE_CONTAINER_NAME: pjctcont # Replace with your Azure Storage container name
       AZURE_SAS_TOKEN_EXPIRY_HOURS: 24
     depends_on:
