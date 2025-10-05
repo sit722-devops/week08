@@ -59,6 +59,9 @@ jobs:
           cd k8s/
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
+          # Check for the status of deployments
+          kubectl rollout status deployment/product-deployment --timeout=120s
+          kubectl rollout status deployment/order-deployment --timeout=120s
 
       - name: Wait for Backend LoadBalancer IPs
         run: |

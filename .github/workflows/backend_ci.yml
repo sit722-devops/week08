@@ -13,6 +13,15 @@ on:
   push:
     branches:
       - main
+      - dev
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend_ci.yml"
+
+  pull_request:
+    branches:
+      - main
+      - dev
     paths: # Only trigger if changes are in backend directories
       - "backend/**"
       - ".github/workflows/backend_ci.yml" # Trigger if this workflow file changes
@@ -132,14 +141,14 @@ jobs:
       # Build and Push Docker image for Product Service
       - name: Build and Push Product Service Image
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:latest ./backend/product_service/
-          docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:latest
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ github.sha }} ./backend/product_service/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/product_service:${{ github.sha }}
 
       # Build and Push Docker image for Order Service
       - name: Build and Push Order Service Image
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:latest ./backend/order_service/
-          docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:latest
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ github.sha }} ./backend/order_service/
+          docker push ${{ env.ACR_LOGIN_SERVER }}/order_service:${{ github.sha }}
 
       # Logout from Azure for security (runs even if image push fails)
       - name: Logout from Azure
