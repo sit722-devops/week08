@@ -1,4 +1,3 @@
-# Adding a comment to auto-trigger the backend cd workflow on git.
 name: CD - Deploy Backend Services to AKS
 
 on:
