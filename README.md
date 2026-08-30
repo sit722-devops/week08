@@ -285,6 +285,19 @@ GitHub Repository
 
 Provide the image SHA that successfully passed the staging deployment and testing process.
 
+### Find the Image SHA
+
+Before running the production workflow, obtain the Git commit SHA of the version that was successfully deployed and tested in staging:
+
+```bash
+git rev-parse HEAD
+```
+
+Copy the returned SHA and provide it as the `image_tag` when manually running the **04 - Deploy to Production** workflow.
+
+> Make sure the SHA belongs to the version that successfully passed the staging pipeline.
+
+
 Run the production workflow and verify that it completes successfully.
 
 Important: Production must use the same image version that was tested in staging. Do not rebuild the Docker images for production.
@@ -293,8 +306,8 @@ Important: Production must use the same image version that was tested in staging
 
 After the production deployment completes:
 
-Verify the Kubernetes resources in the production namespace.
-Find the external IP of the production frontend service.
-Access the production application.
-Confirm that the application is working correctly.
-Verify that production is running the same image SHA that was tested in staging.
+- Verify the Kubernetes resources in the production namespace.
+- Find the external IP of the production frontend service.
+- Access the production application.
+- Confirm that the application is working correctly.
+- Verify that production is running the same image SHA that was tested in staging.
