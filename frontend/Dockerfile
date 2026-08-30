@@ -1,10 +1,32 @@
-# week08/frontend/Dockerfile
+FROM node:22-alpine AS build
 
-FROM nginx:alpine
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm ci
+
+COPY . .
+
+ARG VITE_USER_SERVICE_URL=/api/users
+ARG VITE_STUDENT_SERVICE_URL=/api/students
+ARG VITE_LECTURER_SERVICE_URL=/api/lecturers
+ARG VITE_COURSE_SERVICE_URL=/api/courses
+ARG VITE_ENROLLMENT_SERVICE_URL=/api/enrollments
+
+ENV VITE_USER_SERVICE_URL=${VITE_USER_SERVICE_URL}
+ENV VITE_STUDENT_SERVICE_URL=${VITE_STUDENT_SERVICE_URL}
+ENV VITE_LECTURER_SERVICE_URL=${VITE_LECTURER_SERVICE_URL}
+ENV VITE_COURSE_SERVICE_URL=${VITE_COURSE_SERVICE_URL}
+ENV VITE_ENROLLMENT_SERVICE_URL=${VITE_ENROLLMENT_SERVICE_URL}
+
+RUN npm run build
+
+FROM nginx:1.27-alpine
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-COPY . /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 

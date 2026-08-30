@@ -1,0 +1,96 @@
+name: 02 - Deploy to Staging
+
+on:
+  workflow_run:
+    workflows:
+      - "01 - CI"
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+
+    if: >
+      ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    environment:
+      name: staging
+
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Login to Azure
+        uses: azure/login@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
+            --name ${{ vars.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Create staging namespace
+        run: |
+          kubectl create namespace staging \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply \
+            -f kubernetes/ \
+            -n staging
+
+      - name: Update frontend image
+        run: |
+          kubectl set image deployment/frontend \
+            frontend=${{ vars.ACR_LOGIN_SERVER }}/koalatech-frontend:${{ github.event.workflow_run.head_sha }} \
+            -n staging
+
+      - name: Update user-service image
+        run: |
+          kubectl set image deployment/user-service \
+            user-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-user-service:${{ github.event.workflow_run.head_sha }} \
+            -n staging
+
+      - name: Update student-service image
+        run: |
+          kubectl set image deployment/student-service \
+            student-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-student-service:${{ github.event.workflow_run.head_sha }} \
+            -n staging
+
+      - name: Update lecturer-service image
+        run: |
+          kubectl set image deployment/lecturer-service \
+            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecture-service:${{ github.event.workflow_run.head_sha }} \
+            -n staging
+
+      - name: Update course-service image
+        run: |
+          kubectl set image deployment/course-service \
+            course-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-course-service:${{ github.event.workflow_run.head_sha }} \
+            -n staging
+
+      - name: Update enrollment-service image
+        run: |
+          kubectl set image deployment/enrollment-service \
+            enrollment-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-enrollment-service:${{ github.event.workflow_run.head_sha }} \
+            -n staging
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/frontend -n staging
+          kubectl rollout status deployment/user-service -n staging
+          kubectl rollout status deployment/student-service -n staging
+          kubectl rollout status deployment/lecturer-service -n staging
+          kubectl rollout status deployment/course-service -n staging
+          kubectl rollout status deployment/enrollment-service -n staging
