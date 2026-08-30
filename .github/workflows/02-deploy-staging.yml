@@ -44,11 +44,33 @@ jobs:
             --dry-run=client \
             -o yaml | kubectl apply -f -
 
+      - name: Create PostgreSQL secret
+        run: |
+          kubectl create secret generic postgres-secret \
+            --namespace staging \
+            --from-literal=POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+      - name: Create application secret
+        run: |
+          kubectl create secret generic application-secret \
+            --namespace staging \
+            --from-literal=POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --from-literal=JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
+            --from-literal=DEFAULT_ADMIN_USERNAME="${{ secrets.DEFAULT_ADMIN_USERNAME }}" \
+            --from-literal=DEFAULT_ADMIN_EMAIL="${{ secrets.DEFAULT_ADMIN_EMAIL }}" \
+            --from-literal=DEFAULT_ADMIN_PASSWORD="${{ secrets.DEFAULT_ADMIN_PASSWORD }}" \
+            --from-literal=AZURE_STORAGE_CONNECTION_STRING="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
       - name: Apply Kubernetes manifests
         run: |
           kubectl apply \
-            -f kubernetes/ \
-            -n staging
+            -f kubernetes/staging/
 
       - name: Update frontend image
         run: |
@@ -71,7 +93,7 @@ jobs:
       - name: Update lecturer-service image
         run: |
           kubectl set image deployment/lecturer-service \
-            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecture-service:${{ github.event.workflow_run.head_sha }} \
+            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecturer-service:${{ github.event.workflow_run.head_sha }} \
             -n staging
 
       - name: Update course-service image
@@ -86,11 +108,44 @@ jobs:
             enrollment-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-enrollment-service:${{ github.event.workflow_run.head_sha }} \
             -n staging
 
-      - name: Wait for rollout
+      - name: Wait for frontend rollout
         run: |
-          kubectl rollout status deployment/frontend -n staging
-          kubectl rollout status deployment/user-service -n staging
-          kubectl rollout status deployment/student-service -n staging
-          kubectl rollout status deployment/lecturer-service -n staging
-          kubectl rollout status deployment/course-service -n staging
-          kubectl rollout status deployment/enrollment-service -n staging
+          kubectl rollout status deployment/frontend \
+            -n staging \
+            --timeout=300s
+
+      - name: Wait for user-service rollout
+        run: |
+          kubectl rollout status deployment/user-service \
+            -n staging \
+            --timeout=300s
+
+      - name: Wait for student-service rollout
+        run: |
+          kubectl rollout status deployment/student-service \
+            -n staging \
+            --timeout=300s
+
+      - name: Wait for lecturer-service rollout
+        run: |
+          kubectl rollout status deployment/lecturer-service \
+            -n staging \
+            --timeout=300s
+
+      - name: Wait for course-service rollout
+        run: |
+          kubectl rollout status deployment/course-service \
+            -n staging \
+            --timeout=300s
+
+      - name: Wait for enrollment-service rollout
+        run: |
+          kubectl rollout status deployment/enrollment-service \
+            -n staging \
+            --timeout=300s
+
+      - name: Show staging resources
+        run: |
+          kubectl get pods -n staging
+          kubectl get services -n staging
+          kubectl get pvc -n staging
