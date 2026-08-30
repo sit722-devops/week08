@@ -1,38 +1,152 @@
-# Week 08 - Continuous Delivery (CD) to AKS with GitHub Actions
+# Week 07 – Continuous Integration with GitHub Actions
 
-This example demonstrates a robust Continuous Delivery (CD) pipeline using GitHub Actions to deploy your e-commerce microservices and frontend application to an Azure Kubernetes Service (AKS) cluster. Building upon Week 07's Continuous Integration (CI), this setup automates the final step of getting your tested Docker images from Azure Container Registry (ACR) onto your Kubernetes cluster.
+In this example, we extend the application from **Week 06 – Example 01** by introducing a Continuous Integration (CI) pipeline using GitHub Actions.
 
-## 🚀 Purpose
+The CI pipeline will:
 
-The primary goals of this example are to illustrate:
+1. Run automated tests for all backend services.
+2. Continue only if all tests pass.
+3. Build Docker images for all backend services and the frontend.
+4. Authenticate with Microsoft Azure.
+5. Push the Docker images to Azure Container Registry (ACR).
 
-- **Automated Deployment:** Deploying containerized applications (backend microservices and frontend) to AKS.
-- **Two-Phase CD:** Using separate GitHub Actions workflows for backend and frontend deployment to handle dynamic external IP addresses of LoadBalancer services.
-- **Dynamic Configuration:** How to inject dynamically obtained backend service IPs into the frontend's JavaScript configuration during the CD process.
-- **GitHub Actions for CD:** Leveraging GitHub's native CI/CD platform for orchestrating deployments.
+---
+## 1. Fork the Repository
 
-## 🛠️ Prerequisites
+Log into GitHub, then go to this weeks repository [https://github.com/sit722-devops/week07](https://github.com/sit722-devops/week07) and __Fork__ this into your account.
 
-Before you begin, ensure you have the following:
+![Fork Repository](github-fork.png)
 
-1. Create all required resources (Resource Group, Storage Account, ACR, AKS)
-2. **Azure Service Principal:** Create new Service Principal.
-3. Add new role for service principal for resource group. **More detailes about this step will be provided in seminar. Make sure you join seminar for this**.
-4. **GitHub Repository Secrets:**
-    - In your GitHub repository, go to **Settings** > **Secrets and variables** > **Actions**.
-    - Click **New repository secret** for each:
-      - `AZURE_CREDENTIALS`: You need separate SP with Owner permission (As done in step 3).
+After forking the repository, clone your fork to your local machine.
 
-## 📝 Configuration Files
-
-### 1. Verify Kubernetes Manifests (`week08/k8s/*.yaml`)
-
-- **Images**: All Deployment resources must reference to your ACR with proper image name and tags.
-
-```yaml
-image: <YOUR_ACR_NAME>.azurecr.io/<image_name>:<image_tag>
+```bash
+git clone <YOUR-FORKED-REPOSITORY-URL>
 ```
 
-### 2. Update Backend Pipeline (`.github/workflows/backend-cd.yml`) & Frontend Pipeline (`.github/workflows/frontend-cd.yml`)
+Navigate to the project directory.
 
-Ensure you replace all placeholders value to actual values.
+```bash
+cd <PROJECT-DIRECTORY>
+```
+---
+
+## 2. Create the Required Azure Infrastructure
+
+Make sure the _Azure Container Registry_ has been successfully created before configuring the CI pipeline.
+
+---
+
+## 3. Create a Service Principal
+
+_GitHub Actions_ requires permission to authenticate with Azure and push Docker images to Azure Container Registry.
+
+Create a _Microsoft Entra application and service principal_ by following the official Microsoft documentation:
+
+[https://learn.microsoft.com/en-us/entra/identity-platform/howto-create-service-principal-portal](https://learn.microsoft.com/en-us/entra/identity-platform/howto-create-service-principal-portal
+)
+
+When creating the service principal, make sure you record the following values:
+
+- Application (Client) ID
+- Directory (Tenant) ID
+- Client Secret Value
+- Azure Subscription ID
+
+> **Important:** Copy the **Client Secret Value** when it is created. The secret value is displayed only once.
+
+---
+
+## 4. Assign ACR Permission
+
+The service principal must have permission to push Docker images to Azure Container Registry.
+
+In the Azure Portal:
+
+1. Open your **Azure Container Registry**.
+2. Go to **Access control (IAM)**.
+3. Select **Add role assignment**.
+4. Assign the appropriate role that allows the service principal to push images to the registry (i.e., `Contributor`).
+5. Select the service principal created in the previous step.
+6. Complete the role assignment.
+
+---
+
+## 5. Create GitHub Repository Secret
+
+Open your GitHub repository and go to:
+
+**Settings → Secrets and variables → Actions → Secrets**
+
+Create the following **Repository Secret**:
+
+```text
+AZURE_CREDENTIALS
+```
+
+Use the following structure:
+
+```json
+{
+  "clientId": "YOUR_CLIENT_ID",
+  "clientSecret": "YOUR_CLIENT_SECRET",
+  "subscriptionId": "YOUR_SUBSCRIPTION_ID",
+  "tenantId": "YOUR_TENANT_ID"
+}
+```
+
+Replace each value with the information from your Azure service principal and subscription.
+
+> Never commit Azure credentials or client secrets to the GitHub repository.
+
+---
+
+## 6. Create GitHub Repository Variables
+
+Go to:
+
+**Settings → Secrets and variables → Actions → Variables**
+
+Create the following **Repository Variables**:
+
+```text
+ACR_NAME
+```
+
+Set the value to the name of your Azure Container Registry.
+
+Create another variable:
+
+```text
+ACR_LOGIN_SERVER
+```
+
+Set the value to the login server of your Azure Container Registry.
+
+---
+
+## 7. Run the CI Pipeline
+
+Run the workflow manually from the **Actions** section of the GitHub repository.
+
+Alteernatively, Make some changes in code and push the changes.
+
+Monitor the workflow and confirm that all backend tests pass before the Docker image build and push jobs begin.
+
+---
+
+## 8. Verify Images in Azure Container Registry
+
+After the CI pipeline completes successfully:
+
+1. Open the Azure Portal.
+2. Open your Azure Container Registry.
+3. Select **Repositories**.
+4. Verify that all application Docker images have been pushed successfully.
+
+The CI pipeline is complete when all tests pass and all required Docker images are available in ACR.
+
+---
+
+## 9. Delete All Resources
+
+Delete all Azure resources created for this example after completing the practical.
