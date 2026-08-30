@@ -3,7 +3,6 @@ name: 04 - Deploy to Production
 on:
   workflow_dispatch:
     inputs:
-
       image_tag:
         description: "Tested image SHA to deploy"
         required: true
@@ -39,11 +38,33 @@ jobs:
             --dry-run=client \
             -o yaml | kubectl apply -f -
 
+      - name: Create PostgreSQL secret
+        run: |
+          kubectl create secret generic postgres-secret \
+            --namespace production \
+            --from-literal=POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+      - name: Create application secret
+        run: |
+          kubectl create secret generic application-secret \
+            --namespace production \
+            --from-literal=POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --from-literal=JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
+            --from-literal=DEFAULT_ADMIN_USERNAME="${{ secrets.DEFAULT_ADMIN_USERNAME }}" \
+            --from-literal=DEFAULT_ADMIN_EMAIL="${{ secrets.DEFAULT_ADMIN_EMAIL }}" \
+            --from-literal=DEFAULT_ADMIN_PASSWORD="${{ secrets.DEFAULT_ADMIN_PASSWORD }}" \
+            --from-literal=AZURE_STORAGE_CONNECTION_STRING="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
       - name: Apply Kubernetes manifests
         run: |
           kubectl apply \
-            -f kubernetes/ \
-            -n production
+            -f kubernetes/production/
 
       - name: Update frontend image
         run: |
@@ -66,7 +87,7 @@ jobs:
       - name: Update lecturer-service image
         run: |
           kubectl set image deployment/lecturer-service \
-            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecture-service:${{ inputs.image_tag }} \
+            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecturer-service:${{ inputs.image_tag }} \
             -n production
 
       - name: Update course-service image
@@ -81,11 +102,44 @@ jobs:
             enrollment-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-enrollment-service:${{ inputs.image_tag }} \
             -n production
 
-      - name: Wait for production rollout
+      - name: Wait for frontend rollout
         run: |
-          kubectl rollout status deployment/frontend -n production
-          kubectl rollout status deployment/user-service -n production
-          kubectl rollout status deployment/student-service -n production
-          kubectl rollout status deployment/lecturer-service -n production
-          kubectl rollout status deployment/course-service -n production
-          kubectl rollout status deployment/enrollment-service -n production
+          kubectl rollout status deployment/frontend \
+            -n production \
+            --timeout=300s
+
+      - name: Wait for user-service rollout
+        run: |
+          kubectl rollout status deployment/user-service \
+            -n production \
+            --timeout=300s
+
+      - name: Wait for student-service rollout
+        run: |
+          kubectl rollout status deployment/student-service \
+            -n production \
+            --timeout=300s
+
+      - name: Wait for lecturer-service rollout
+        run: |
+          kubectl rollout status deployment/lecturer-service \
+            -n production \
+            --timeout=300s
+
+      - name: Wait for course-service rollout
+        run: |
+          kubectl rollout status deployment/course-service \
+            -n production \
+            --timeout=300s
+
+      - name: Wait for enrollment-service rollout
+        run: |
+          kubectl rollout status deployment/enrollment-service \
+            -n production \
+            --timeout=300s
+
+      - name: Show production resources
+        run: |
+          kubectl get pods -n production
+          kubectl get services -n production
+          kubectl get pvc -n production
