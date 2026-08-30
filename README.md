@@ -1,89 +1,95 @@
-# Week 07 – Continuous Integration with GitHub Actions
+# Week 08 – Continuous Delivery with GitHub Actions and Kubernetes
 
-In this example, we extend the application from **Week 06 – Example 01** by introducing a Continuous Integration (CI) pipeline using GitHub Actions.
+In Week 07, we implemented a Continuous Integration (CI) pipeline using GitHub Actions. The pipeline automatically tested the backend services, built Docker images, and pushed the successfully built images to Azure Container Registry (ACR).
 
-The CI pipeline will:
+In Week 08, we extend this workflow to implement **Continuous Delivery (CD)**.
 
-1. Run automated tests for all backend services.
-2. Continue only if all tests pass.
-3. Build Docker images for all backend services and the frontend.
-4. Authenticate with Microsoft Azure.
-5. Push the Docker images to Azure Container Registry (ACR).
+The application will first be automatically deployed to a **staging environment**. After deployment, automated tests will verify that the staging application is working correctly. A tested version can then be manually promoted to the **production environment**.
+
+The same Docker images that are tested in staging are deployed to production. The application is **not rebuilt** during production deployment.
 
 ---
-## 1. Fork the Repository
 
-Log into GitHub, then go to this weeks repository [https://github.com/sit722-devops/week07](https://github.com/sit722-devops/week07) and __Fork__ this into your account.
+## 1. Continuous Delivery Workflow
 
-![Fork Repository](github-fork.png)
+The Week 08 pipeline consists of four GitHub Actions workflows:
 
-After forking the repository, clone your fork to your local machine.
+![](./workflow.png)
 
-```bash
-git clone <YOUR-FORKED-REPOSITORY-URL>
+The first three workflows run automatically.
+
+Production deployment is intentionally manual.
+
+---
+
+# 2. Prepare the Infrastructure
+
+Create the Terraform infrastructure files using the same approach demonstrated in **Week 06**.
+
+The infrastructure should provide the Azure resources required by the application, including the Kubernetes infrastructure, Azure Container Registry, and Azure Storage configuration used by the application.
+
+### Important AKS Change
+
+When creating the Kubernetes infrastructure, update the AKS node count to:
+
+```hcl
+node_count = 3
 ```
 
-Navigate to the project directory.
+Three nodes are required for this practical because both the staging and production environments run persistent PostgreSQL database workloads.
+
+After running Terraform, verify that the AKS cluster contains three nodes:
 
 ```bash
-cd <PROJECT-DIRECTORY>
+kubectl get nodes
 ```
----
-
-## 2. Create the Required Azure Infrastructure
-
-Make sure the _Azure Container Registry_ has been successfully created before configuring the CI pipeline.
 
 ---
 
-## 3. Create a Service Principal
+# 4. Fork the Repository
 
-_GitHub Actions_ requires permission to authenticate with Azure and push Docker images to Azure Container Registry.
+Fork the provided Week 08 repository into your own GitHub account.
 
-Create a _Microsoft Entra application and service principal_ by following the official Microsoft documentation:
+Clone your fork:
 
-[https://learn.microsoft.com/en-us/entra/identity-platform/howto-create-service-principal-portal](https://learn.microsoft.com/en-us/entra/identity-platform/howto-create-service-principal-portal
-)
+```bash
+git clone <YOUR-FORK-URL>
+```
 
-When creating the service principal, make sure you record the following values:
+Move into the project:
 
-- Application (Client) ID
-- Directory (Tenant) ID
-- Client Secret Value
-- Azure Subscription ID
+```bash
+cd week08
+```
 
-> **Important:** Copy the **Client Secret Value** when it is created. The secret value is displayed only once.
+Ensure that your remote points to your fork:
 
----
-
-## 4. Assign ACR Permission
-
-The service principal must have permission to push Docker images to Azure Container Registry.
-
-In the Azure Portal:
-
-1. Open your **Azure Container Registry**.
-2. Go to **Access control (IAM)**.
-3. Select **Add role assignment**.
-4. Assign the appropriate role that allows the service principal to push images to the registry (i.e., `Contributor`).
-5. Select the service principal created in the previous step.
-6. Complete the role assignment.
+```bash
+git remote -v
+```
 
 ---
 
-## 5. Create GitHub Repository Secret
+# 5. Create Azure Service Principal
 
-Open your GitHub repository and go to:
+GitHub Actions requires permission to interact with Azure.
 
-**Settings → Secrets and variables → Actions → Secrets**
+Create a Service Principal following the same process introduced previously.
 
-Create the following **Repository Secret**:
+The Service Principal must have sufficient permissions to:
+
+* authenticate with Azure;
+* push Docker images to Azure Container Registry;
+* access the AKS cluster;
+* deploy Kubernetes workloads.
+
+Store the Service Principal credentials as a GitHub Repository Secret named:
 
 ```text
 AZURE_CREDENTIALS
 ```
 
-Use the following structure:
+The value must use the following structure:
 
 ```json
 {
@@ -94,59 +100,201 @@ Use the following structure:
 }
 ```
 
-Replace each value with the information from your Azure service principal and subscription.
-
-> Never commit Azure credentials or client secrets to the GitHub repository.
+Do not commit these credentials to the repository.
 
 ---
 
-## 6. Create GitHub Repository Variables
+# 6. Configure GitHub Repository Variables
 
 Go to:
 
-**Settings → Secrets and variables → Actions → Variables**
-
-Create the following **Repository Variables**:
-
 ```text
-ACR_NAME
+GitHub Repository
+→ Settings
+→ Secrets and variables
+→ Actions
+→ Variables
 ```
 
-Set the value to the name of your Azure Container Registry.
+Create the following **Repository Variables**.
 
-Create another variable:
+### ACR_NAME
+
+The name of your Azure Container Registry.
+
+---
+
+### ACR_LOGIN_SERVER
+
+The complete ACR login server.
+
+---
+
+### AKS_RESOURCE_GROUP
+
+The Resource Group containing your AKS cluster.
+
+---
+
+### AKS_CLUSTER_NAME
+
+The name of your AKS cluster.
+
+---
+
+# 7. Repository Secret
+
+Under:
 
 ```text
-ACR_LOGIN_SERVER
+Settings
+→ Secrets and variables
+→ Actions
+→ Secrets
 ```
 
-Set the value to the login server of your Azure Container Registry.
+create:
+
+```text
+AZURE_CREDENTIALS
+```
+
+This contains the Service Principal authentication JSON.
 
 ---
 
-## 7. Run the CI Pipeline
+# 8. Create the Staging GitHub Environment
 
-Run the workflow manually from the **Actions** section of the GitHub repository.
+Go to:
 
-Alteernatively, Make some changes in code and push the changes.
+```text
+GitHub Repository
+→ Settings
+→ Environments
+→ New environment
+```
 
-Monitor the workflow and confirm that all backend tests pass before the Docker image build and push jobs begin.
+Create:
+
+```text
+staging
+```
+
+Add the following **Environment Secrets**:
+
+```text
+POSTGRES_USER = postgres
+POSTGRES_PASSWORD = postgres
+JWT_SECRET_KEY = koalatech-local-development-secret
+DEFAULT_ADMIN_USERNAME = admin
+DEFAULT_ADMIN_EMAIL = admin@koalatech.edu.au
+DEFAULT_ADMIN_PASSWORD = AdminPassword123!
+AZURE_STORAGE_CONNECTION_STRING = <YOUR_STORAGE_ACCOUNT_CONNECTION_STRING>
+```
+---
+
+# 9. Create the Production GitHub Environment
+
+Create another environment:
+
+```text
+production
+```
+
+Add the same Environment Secret names:
+
+```text
+POSTGRES_USER = postgres
+POSTGRES_PASSWORD = postgres
+JWT_SECRET_KEY = koalatech-local-development-secret
+DEFAULT_ADMIN_USERNAME = admin
+DEFAULT_ADMIN_EMAIL = admin@koalatech.edu.au
+DEFAULT_ADMIN_PASSWORD = AdminPassword123!
+AZURE_STORAGE_CONNECTION_STRING = <YOUR_STORAGE_ACCOUNT_CONNECTION_STRING>
+```
+
+Staging and production therefore have independent environment configuration.
 
 ---
 
-## 8. Verify Images in Azure Container Registry
+# 10. GitHub Configuration Summary
 
-After the CI pipeline completes successfully:
+The final GitHub configuration should be:
 
-1. Open the Azure Portal.
-2. Open your Azure Container Registry.
-3. Select **Repositories**.
-4. Verify that all application Docker images have been pushed successfully.
-
-The CI pipeline is complete when all tests pass and all required Docker images are available in ACR.
+| Type                          | Name                              |
+| ----------------------------- | --------------------------------- |
+| Repository Secret             | `AZURE_CREDENTIALS`               |
+| Repository Variable           | `ACR_NAME`                        |
+| Repository Variable           | `ACR_LOGIN_SERVER`                |
+| Repository Variable           | `AKS_RESOURCE_GROUP`              |
+| Repository Variable           | `AKS_CLUSTER_NAME`                |
+| Staging Environment Secret    | `POSTGRES_USER`                   |
+| Staging Environment Secret    | `POSTGRES_PASSWORD`               |
+| Staging Environment Secret    | `JWT_SECRET_KEY`                  |
+| Staging Environment Secret    | `DEFAULT_ADMIN_USERNAME`          |
+| Staging Environment Secret    | `DEFAULT_ADMIN_EMAIL`             |
+| Staging Environment Secret    | `DEFAULT_ADMIN_PASSWORD`          |
+| Staging Environment Secret    | `AZURE_STORAGE_CONNECTION_STRING` |
+| Production Environment Secret | `POSTGRES_USER`                   |
+| Production Environment Secret | `POSTGRES_PASSWORD`               |
+| Production Environment Secret | `JWT_SECRET_KEY`                  |
+| Production Environment Secret | `DEFAULT_ADMIN_USERNAME`          |
+| Production Environment Secret | `DEFAULT_ADMIN_EMAIL`             |
+| Production Environment Secret | `DEFAULT_ADMIN_PASSWORD`          |
+| Production Environment Secret | `AZURE_STORAGE_CONNECTION_STRING` |
 
 ---
 
-## 9. Delete All Resources
+# 11. GitHub Actions Workflows
 
-Delete all Azure resources created for this example after completing the practical.
+The repository contains four workflow files:
+
+```text
+.github/
+└── workflows/
+    ├── 01-ci.yml
+    ├── 02-deploy-staging.yml
+    ├── 03-staging-test.yml
+    └── 04-deploy-production.yml
+```
+
+---
+
+# 12. Run and Verify the Staging Application
+
+Verify that the following workflows complete successfully:
+
+01 - CI
+02 - Deploy to Staging
+03 - Staging Test
+
+Once the deployment is complete, verify the Kubernetes resources in the staging namespace and access the staging application using the frontend external IP.
+
+Confirm that the application is working correctly before proceeding to production.
+
+13. Deploy to Production
+
+Production deployment is performed manually.
+
+Go to:
+
+GitHub Repository
+→ Actions
+→ 04 - Deploy to Production
+→ Run workflow
+
+Provide the image SHA that successfully passed the staging deployment and testing process.
+
+Run the production workflow and verify that it completes successfully.
+
+Important: Production must use the same image version that was tested in staging. Do not rebuild the Docker images for production.
+
+14. Verify the Production Application
+
+After the production deployment completes:
+
+Verify the Kubernetes resources in the production namespace.
+Find the external IP of the production frontend service.
+Access the production application.
+Confirm that the application is working correctly.
+Verify that production is running the same image SHA that was tested in staging.
