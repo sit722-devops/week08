@@ -197,3 +197,5 @@ cython_debug/
 .cursorindexingignore
 
 node_modules/
+# Local Week 08 Terraform working files
+terraform/
