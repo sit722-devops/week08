@@ -89,19 +89,26 @@ const Login = () => {
     <Container maxWidth="sm">
       <Card sx={{ mt: 10 }}>
         <CardContent sx={{ p: 4 }}>
-          <Typography
-            variant="h4"
-            gutterBottom
-          >
-            KoalaTech University
-          </Typography>
+        <Typography
+          variant="h4"
+          gutterBottom
+        >
+        KoalaTech University
+        </Typography>
 
-          <Typography
-            color="text.secondary"
-            sx={{ mb: 3 }}
-          >
-            Sign in to continue
-          </Typography>
+        <Typography
+          color="primary"
+          sx={{ mb: 2 }}
+        >
+        Task 9.3C - Continuous Deployment Successful!
+        </Typography>
+
+        <Typography
+          color="text.secondary"
+          sx={{ mb: 3 }}
+        >
+        Sign in to continue
+        </Typography>
 
           {error && (
             <Alert
