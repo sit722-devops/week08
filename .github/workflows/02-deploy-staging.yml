@@ -34,8 +34,8 @@ jobs:
       - name: Get AKS credentials
         run: |
           az aks get-credentials \
-            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
-            --name ${{ vars.AKS_CLUSTER_NAME }} \
+            --resource-group sit722-week08-rg \
+            --name prem-week08-aks \
             --overwrite-existing
 
       - name: Create staging namespace

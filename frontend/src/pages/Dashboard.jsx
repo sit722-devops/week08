@@ -195,7 +195,7 @@ const Dashboard = () => {
           variant="h4"
           fontWeight={600}
         >
-          Dashboard
+          Dashboard — Continuous Deployment
         </Typography>
 
         <Typography color="text.secondary">
