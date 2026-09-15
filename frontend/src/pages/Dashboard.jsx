@@ -199,7 +199,7 @@ const Dashboard = () => {
         </Typography>
 
         <Typography color="text.secondary">
-          Welcome to KoalaTech University
+          Welcome to KoalaTech University - Continuous Deployment
         </Typography>
       </Box>
 
