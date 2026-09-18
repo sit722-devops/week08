@@ -1,17 +1,28 @@
 name: 01 - CI
 
 on:
-  # Trigger the workflow on push to main branch
+  # =========================================================
+  # Pull Request Validation
+  # =========================================================
+  # Run tests when a pull request targets main.
+  # Docker images are NOT built/pushed for pull requests.
+  pull_request:
+    branches:
+      - main
+
+  # =========================================================
+  # Main Branch CI
+  # =========================================================
+  # After a pull request is merged into main, run tests,
+  # build the Docker images and push them to ACR.
   push:
     branches:
       - main
-  
-  # Manual trigger for the workflow
+
+  # Allow the workflow to be started manually if required.
   workflow_dispatch:
 
-
 jobs:
-
   # =========================================================
   # Backend Tests
   # =========================================================
@@ -81,7 +92,6 @@ jobs:
       AZURE_STORAGE_CONTAINER_NAME: ""
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -101,7 +111,43 @@ jobs:
         run: |
           pytest -v
 
+  # =========================================================
+  # Frontend Tests
+  # =========================================================
+  frontend-test:
+    name: Test Frontend
+    runs-on: ubuntu-latest
 
+    # Test-only service URLs required by the Vite frontend.
+    # These values allow frontend modules to initialise during
+    # unit testing without requiring deployed backend services.
+    env:
+      VITE_USER_SERVICE_URL: http://localhost:8001
+      VITE_STUDENT_SERVICE_URL: http://localhost:8002
+      VITE_LECTURER_SERVICE_URL: http://localhost:8003
+      VITE_COURSE_SERVICE_URL: http://localhost:8004
+      VITE_ENROLLMENT_SERVICE_URL: http://localhost:8005
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: |
+          npm run test -- --run
   # =========================================================
   # Build and Push Docker Images
   # =========================================================
@@ -109,12 +155,18 @@ jobs:
     name: Build and Push ${{ matrix.image }}
     runs-on: ubuntu-latest
 
-    # All backend tests must pass before this job starts
+    # Both backend and frontend tests must pass before
+    # Docker images can be built and pushed.
     needs:
       - backend-test
+      - frontend-test
 
-    # Build and push when code is pushed to main or manually triggered
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Do not build/push images for pull requests.
+    # Build/push only after changes reach main or when
+    # the workflow is manually triggered.
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
 
     strategy:
       fail-fast: false
@@ -140,18 +192,18 @@ jobs:
             image: koalatech-enrollment-service
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Login to Azure Container Registry
         run: |
-          az acr login --name ${{ vars.ACR_NAME }}
+          az acr login \
+            --name ${{ vars.ACR_NAME }}
 
       - name: Build Docker image
         run: |
@@ -164,3 +216,8 @@ jobs:
         run: |
           docker push \
             ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+
+      - name: Display published image
+        run: |
+          echo "Published image:"
+          echo "${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}"
