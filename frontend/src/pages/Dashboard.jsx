@@ -194,12 +194,13 @@ const Dashboard = () => {
         <Typography
           variant="h4"
           fontWeight={600}
+          sx={{ color: "#d32f2f" }}
         >
           Dashboard
         </Typography>
 
         <Typography color="text.secondary">
-          Welcome to KoalaTech University
+          Welcome to KoalaTech University — deployed automatically via CD (9.3C)!
         </Typography>
       </Box>
 

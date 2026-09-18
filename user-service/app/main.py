@@ -138,4 +138,8 @@ def health_check() -> dict[str, str]:
     return {
         "status": "healthy",
         "service": "user-service",
-    }
+    }# Triggering initial CD pipeline run
+# retry trigger
+# retry trigger 2
+# redeploy after recreating AKS for 9.1P
+# redeploy after recreating AKS for 9.3C
