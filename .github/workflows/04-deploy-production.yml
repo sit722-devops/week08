@@ -1,12 +1,15 @@
 name: 04 - Deploy to Production
 
 on:
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
     inputs:
       image_tag:
         description: "Tested image SHA to deploy"
         required: true
         type: string
+        default: "latest"
 
 jobs:
   deploy-production:
@@ -18,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Login to Azure
         uses: azure/login@v3
