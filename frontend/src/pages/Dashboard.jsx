@@ -195,11 +195,11 @@ const Dashboard = () => {
           variant="h4"
           fontWeight={600}
         >
-          Dashboard
+          KoalaTech University Dashboard
         </Typography>
 
         <Typography color="text.secondary">
-          Welcome to KoalaTech University
+          Continuous Deployment successfully delivered this update
         </Typography>
       </Box>
 
