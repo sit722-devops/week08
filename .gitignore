@@ -197,3 +197,10 @@ cython_debug/
 .cursorindexingignore
 
 node_modules/
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/terraform.tfvars
+terraform/aks-kubeconfig.yaml
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup

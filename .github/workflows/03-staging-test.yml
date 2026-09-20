@@ -21,17 +21,19 @@ jobs:
       name: staging
 
     steps:
-      - name: Login to Azure
-        uses: azure/login@v3
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
 
-      - name: Get AKS credentials
+      # See note in 02-deploy-staging.yml: kubeconfig is supplied via a
+      # repository secret rather than azure/login, since this CloudLabs
+      # tenant blocks Entra service-principal creation.
+      - name: Set up kubeconfig
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
         run: |
-          az aks get-credentials \
-            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
-            --name ${{ vars.AKS_CLUSTER_NAME }} \
-            --overwrite-existing
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG_DATA" > "$HOME/.kube/config"
+          kubectl config current-context
 
       - name: Wait for staging frontend IP
         run: |

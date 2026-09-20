@@ -1,36 +1,50 @@
 name: 04 - Deploy to Production
 
+# 9.3C change: production now deploys automatically once staging has been
+# tested successfully, instead of requiring a human to manually trigger this
+# workflow and paste in a commit SHA. This mirrors exactly how 02 chains off
+# 01, and 03 chains off 02 — the tested commit SHA flows through automatically
+# via github.event.workflow_run.head_sha rather than a manual input.
 on:
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Tested image SHA to deploy"
-        required: true
-        type: string
+  workflow_run:
+    workflows:
+      - "03 - Test Staging"
+    types:
+      - completed
+    branches:
+      - main
 
 jobs:
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
 
+    # Only proceed if the staging test that triggered this actually passed.
+    if: >
+      ${{ github.event.workflow_run.conclusion == 'success' }}
+
     environment:
       name: production
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Login to Azure
-        uses: azure/login@v3
+      - name: Checkout tested commit
+        uses: actions/checkout@v6
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Get AKS credentials
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      # See note in 02-deploy-staging.yml: kubeconfig is supplied via a
+      # repository secret rather than azure/login, since this CloudLabs
+      # tenant blocks Entra service-principal creation.
+      - name: Set up kubeconfig
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
         run: |
-          az aks get-credentials \
-            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
-            --name ${{ vars.AKS_CLUSTER_NAME }} \
-            --overwrite-existing
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG_DATA" > "$HOME/.kube/config"
+          kubectl config current-context
 
       - name: Create production namespace
         run: |
@@ -69,37 +83,37 @@ jobs:
       - name: Update frontend image
         run: |
           kubectl set image deployment/frontend \
-            frontend=${{ vars.ACR_LOGIN_SERVER }}/koalatech-frontend:${{ inputs.image_tag }} \
+            frontend=${{ vars.ACR_LOGIN_SERVER }}/koalatech-frontend:${{ github.event.workflow_run.head_sha }} \
             -n production
 
       - name: Update user-service image
         run: |
           kubectl set image deployment/user-service \
-            user-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-user-service:${{ inputs.image_tag }} \
+            user-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-user-service:${{ github.event.workflow_run.head_sha }} \
             -n production
 
       - name: Update student-service image
         run: |
           kubectl set image deployment/student-service \
-            student-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-student-service:${{ inputs.image_tag }} \
+            student-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-student-service:${{ github.event.workflow_run.head_sha }} \
             -n production
 
       - name: Update lecturer-service image
         run: |
           kubectl set image deployment/lecturer-service \
-            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecturer-service:${{ inputs.image_tag }} \
+            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecturer-service:${{ github.event.workflow_run.head_sha }} \
             -n production
 
       - name: Update course-service image
         run: |
           kubectl set image deployment/course-service \
-            course-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-course-service:${{ inputs.image_tag }} \
+            course-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-course-service:${{ github.event.workflow_run.head_sha }} \
             -n production
 
       - name: Update enrollment-service image
         run: |
           kubectl set image deployment/enrollment-service \
-            enrollment-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-enrollment-service:${{ inputs.image_tag }} \
+            enrollment-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-enrollment-service:${{ github.event.workflow_run.head_sha }} \
             -n production
 
       - name: Wait for frontend rollout

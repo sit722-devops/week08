@@ -1,0 +1,9 @@
+# Copy this file to terraform.tfvars and fill in your own value.
+# prefix must be short, lowercase, alphanumeric only (no spaces/hyphens/underscores
+# where possible) because it is reused to name ACR and the Storage Account, which
+# both require globally-unique, lowercase-alphanumeric names.
+
+prefix = "sit722w08jsmith123"   # e.g. your unit code + student ID, all lowercase
+location = "australiaeast"
+node_count = 3
+vm_size = "Standard_B2s"

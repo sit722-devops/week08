@@ -1,5 +1,5 @@
 name: 02 - Deploy to Staging
-
+# re-index
 on:
   workflow_run:
     workflows:
@@ -22,21 +22,28 @@ jobs:
 
     steps:
       - name: Checkout tested commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Login to Azure
-        uses: azure/login@v3
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
 
-      - name: Get AKS credentials
+      # NOTE: This CloudLabs Azure tenant does not permit self-service
+      # Microsoft Entra app/service-principal registration, so the
+      # azure/login + az aks get-credentials approach from the README
+      # cannot be used here. Instead, a kubeconfig file was generated
+      # locally (where interactive MFA login is possible) using
+      # `az aks get-credentials`, and its full contents were stored as
+      # the KUBE_CONFIG repository secret. This step simply writes that
+      # secret to the default kubeconfig location so kubectl can use it.
+      - name: Set up kubeconfig
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
         run: |
-          az aks get-credentials \
-            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
-            --name ${{ vars.AKS_CLUSTER_NAME }} \
-            --overwrite-existing
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG_DATA" > "$HOME/.kube/config"
+          kubectl config current-context
 
       - name: Create staging namespace
         run: |
