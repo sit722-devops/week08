@@ -29,7 +29,7 @@ const Sidebar = () => {
 
   const menuItems = [
     {
-      title: "Dashboard",
+      title: "Dashboard - Overview",
       path: "/dashboard",
       icon: <Dashboard />,
       roles: [
