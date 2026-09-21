@@ -9,4 +9,3 @@ python-multipart==0.0.20
 pytest==8.4.1
 httpx==0.28.1
 python-dotenv==1.0.1
-# CI/CD validation for SIT722 Week 08
