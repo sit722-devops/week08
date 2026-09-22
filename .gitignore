@@ -197,3 +197,5 @@ cython_debug/
 .cursorindexingignore
 
 node_modules/
+# Local Terraform infrastructure
+terraform/
