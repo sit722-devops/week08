@@ -1,12 +1,12 @@
-name: 01 - CI
+﻿name: 01 - CI
 
 on:
-  # Trigger the workflow on push to main branch
   push:
     branches:
       - main
-  
-  # Manual trigger for the workflow
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 
@@ -109,12 +109,10 @@ jobs:
     name: Build and Push ${{ matrix.image }}
     runs-on: ubuntu-latest
 
-    # All backend tests must pass before this job starts
     needs:
       - backend-test
 
-    # Build and push when code is pushed to main or manually triggered
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
 
     strategy:
       fail-fast: false
