@@ -1,3 +1,5 @@
+# Task 8.1P automatic CI/CD push trigger
+
 import logging
 import os
 import time
