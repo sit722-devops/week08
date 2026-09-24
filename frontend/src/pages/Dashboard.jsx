@@ -199,7 +199,7 @@ const Dashboard = () => {
         </Typography>
 
         <Typography color="text.secondary">
-          Welcome to KoalaTech University
+          SIT722 Task 9.3C - Continuous Deployment Successful
         </Typography>
       </Box>
 
