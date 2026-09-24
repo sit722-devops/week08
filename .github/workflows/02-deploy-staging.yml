@@ -10,6 +10,7 @@ on:
       - main
 
 jobs:
+
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
@@ -21,22 +22,17 @@ jobs:
       name: staging
 
     steps:
+
       - name: Checkout tested commit
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Login to Azure
-        uses: azure/login@v3
+      - name: Set Kubernetes context
+        uses: azure/k8s-set-context@v4
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Get AKS credentials
-        run: |
-          az aks get-credentials \
-            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
-            --name ${{ vars.AKS_CLUSTER_NAME }} \
-            --overwrite-existing
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
 
       - name: Create staging namespace
         run: |

@@ -9,6 +9,8 @@ from app.db import Base, engine
 from app.routers import students
 from app.storage import ensure_container_exists
 
+# 8.1P trigger CI/CD after enabling GitHub Actions and updating secret.
+
 
 logging.basicConfig(
     level=logging.INFO,

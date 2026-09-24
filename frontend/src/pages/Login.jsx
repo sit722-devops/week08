@@ -93,8 +93,15 @@ const Login = () => {
             variant="h4"
             gutterBottom
           >
-            KoalaTech University
+            KoalaTech University - Continuous Deployment Demo
           </Typography>
+
+          <Typography
+  color="text.secondary"
+  sx={{ mb: 3 }}
+>
+  Continuous Deployment successfully updated this page
+</Typography>
 
           <Typography
             color="text.secondary"
