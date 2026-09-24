@@ -195,7 +195,7 @@ const Dashboard = () => {
           variant="h4"
           fontWeight={600}
         >
-          Dashboard
+          KoalaTech University — Continuous Deployment Demo
         </Typography>
 
         <Typography color="text.secondary">

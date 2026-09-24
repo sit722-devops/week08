@@ -1,20 +1,25 @@
 name: 01 - CI
 
 on:
-  # Trigger the workflow on push to main branch
+
   push:
     branches:
       - main
+
+
+  pull_request:
+    branches:
+      - main
   
-  # Manual trigger for the workflow
+
   workflow_dispatch:
 
 
 jobs:
 
-  # =========================================================
+
   # Backend Tests
-  # =========================================================
+
   backend-test:
     name: Test ${{ matrix.service }}
     runs-on: ubuntu-latest
@@ -102,9 +107,47 @@ jobs:
           pytest -v
 
 
-  # =========================================================
+
+  # Terraform Infrastructure Validation and Plan
+
+  terraform:
+    name: Terraform Validate and Plan
+    runs-on: ubuntu-latest
+
+    needs:
+      - backend-test
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Initialize Terraform
+        working-directory: terraform
+        run: terraform init -input=false
+
+      - name: Validate Terraform
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Login to Azure for Terraform plan
+        if: github.event_name != 'pull_request'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Plan Terraform changes
+        if: github.event_name != 'pull_request'
+        working-directory: terraform
+        run: terraform plan -input=false -var-file=terraform.tfvars
+
+
+
   # Build and Push Docker Images
-  # =========================================================
+
   build-and-push:
     name: Build and Push ${{ matrix.image }}
     runs-on: ubuntu-latest
@@ -112,6 +155,7 @@ jobs:
     # All backend tests must pass before this job starts
     needs:
       - backend-test
+      - terraform
 
     # Build and push when code is pushed to main or manually triggered
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -159,6 +203,17 @@ jobs:
             --platform linux/amd64 \
             -t ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
             ./${{ matrix.service }}
+
+      - name: Scan image with Docker Scout
+        continue-on-error: true
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+          only-severities: critical,high
+          dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
+          exit-code: false
 
       - name: Push Docker image with commit SHA
         run: |

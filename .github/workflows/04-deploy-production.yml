@@ -1,145 +1,96 @@
 name: 04 - Deploy to Production
 
 on:
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Tested image SHA to deploy"
-        required: true
-        type: string
+  workflow_run:
+    workflows:
+      - "03 - Test Staging"
+    types:
+      - completed
+    branches:
+      - main
 
 jobs:
   deploy-production:
-    name: Deploy to Production
+    name: Promote validated staging to production
     runs-on: ubuntu-latest
+
+    if: >
+      ${{ github.event.workflow_run.conclusion == 'success' }}
 
     environment:
       name: production
 
+    env:
+      APP_SERVICE_NAME: koalatech-week08-webapp-226035073
+      RESOURCE_GROUP: koalatech-week08-rg
+      STAGING_SLOT: staging
+      PRODUCTION_SLOT: production
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Login to Azure
-        uses: azure/login@v3
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Get AKS credentials
+      - name: Swap staging into production
         run: |
-          az aks get-credentials \
-            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
-            --name ${{ vars.AKS_CLUSTER_NAME }} \
-            --overwrite-existing
+          echo "Swapping ${STAGING_SLOT} slot into ${PRODUCTION_SLOT} slot"
+          timeout 600s az webapp deployment slot swap \
+            --name "$APP_SERVICE_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --slot "$STAGING_SLOT" \
+            --target-slot "$PRODUCTION_SLOT"
 
-      - name: Create production namespace
+      - name: Verify production endpoint
         run: |
-          kubectl create namespace production \
-            --dry-run=client \
-            -o yaml | kubectl apply -f -
+          PROD_HOSTNAME=$(az webapp show \
+            --name "$APP_SERVICE_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query defaultHostName \
+            --output tsv)
 
-      - name: Create PostgreSQL secret
-        run: |
-          kubectl create secret generic postgres-secret \
-            --namespace production \
-            --from-literal=POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
-            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
-            --dry-run=client \
-            -o yaml | kubectl apply -f -
+          echo "Checking https://${PROD_HOSTNAME}"
 
-      - name: Create application secret
-        run: |
-          kubectl create secret generic application-secret \
-            --namespace production \
-            --from-literal=POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
-            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
-            --from-literal=JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
-            --from-literal=DEFAULT_ADMIN_USERNAME="${{ secrets.DEFAULT_ADMIN_USERNAME }}" \
-            --from-literal=DEFAULT_ADMIN_EMAIL="${{ secrets.DEFAULT_ADMIN_EMAIL }}" \
-            --from-literal=DEFAULT_ADMIN_PASSWORD="${{ secrets.DEFAULT_ADMIN_PASSWORD }}" \
-            --from-literal=AZURE_STORAGE_CONNECTION_STRING="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
-            --dry-run=client \
-            -o yaml | kubectl apply -f -
+          if ! curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --connect-timeout 10 \
+            --max-time 30 \
+            "https://${PROD_HOSTNAME}" \
+            > /tmp/production-response.html; then
 
-      - name: Apply Kubernetes manifests
-        run: |
-          kubectl apply \
-            -f kubernetes/production/
+            echo "Production verification failed: the live endpoint did not respond successfully."
+            echo "Rolling back to the previous production version using the slot swap."
 
-      - name: Update frontend image
-        run: |
-          kubectl set image deployment/frontend \
-            frontend=${{ vars.ACR_LOGIN_SERVER }}/koalatech-frontend:${{ inputs.image_tag }} \
-            -n production
+            timeout 600s az webapp deployment slot swap \
+              --name "$APP_SERVICE_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --slot "$STAGING_SLOT" \
+              --target-slot "$PRODUCTION_SLOT"
 
-      - name: Update user-service image
-        run: |
-          kubectl set image deployment/user-service \
-            user-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-user-service:${{ inputs.image_tag }} \
-            -n production
+            echo "Rollback swap completed."
+            exit 1
+          fi
 
-      - name: Update student-service image
-        run: |
-          kubectl set image deployment/student-service \
-            student-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-student-service:${{ inputs.image_tag }} \
-            -n production
+          if ! grep -Eiq "<html|<!doctype html|KoalaTech|Login" /tmp/production-response.html; then
+            echo "Production response did not match the expected HTML markers."
+            echo "Rolling back to the previous production version using the slot swap."
 
-      - name: Update lecturer-service image
-        run: |
-          kubectl set image deployment/lecturer-service \
-            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecturer-service:${{ inputs.image_tag }} \
-            -n production
+            timeout 600s az webapp deployment slot swap \
+              --name "$APP_SERVICE_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --slot "$STAGING_SLOT" \
+              --target-slot "$PRODUCTION_SLOT"
 
-      - name: Update course-service image
-        run: |
-          kubectl set image deployment/course-service \
-            course-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-course-service:${{ inputs.image_tag }} \
-            -n production
+            echo "Rollback swap completed."
+            exit 1
+          fi
 
-      - name: Update enrollment-service image
-        run: |
-          kubectl set image deployment/enrollment-service \
-            enrollment-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-enrollment-service:${{ inputs.image_tag }} \
-            -n production
-
-      - name: Wait for frontend rollout
-        run: |
-          kubectl rollout status deployment/frontend \
-            -n production \
-            --timeout=300s
-
-      - name: Wait for user-service rollout
-        run: |
-          kubectl rollout status deployment/user-service \
-            -n production \
-            --timeout=300s
-
-      - name: Wait for student-service rollout
-        run: |
-          kubectl rollout status deployment/student-service \
-            -n production \
-            --timeout=300s
-
-      - name: Wait for lecturer-service rollout
-        run: |
-          kubectl rollout status deployment/lecturer-service \
-            -n production \
-            --timeout=300s
-
-      - name: Wait for course-service rollout
-        run: |
-          kubectl rollout status deployment/course-service \
-            -n production \
-            --timeout=300s
-
-      - name: Wait for enrollment-service rollout
-        run: |
-          kubectl rollout status deployment/enrollment-service \
-            -n production \
-            --timeout=300s
-
-      - name: Show production resources
-        run: |
-          kubectl get pods -n production
-          kubectl get services -n production
-          kubectl get pvc -n production
+          echo "Production verification passed."
