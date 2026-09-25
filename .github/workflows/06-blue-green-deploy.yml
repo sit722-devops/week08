@@ -1,0 +1,191 @@
+name: 06 - Blue Green Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy"
+        required: true
+        default: "eca2005a2997f5b3fb2cdfac6daa54d5743669c4"
+      simulate_failure:
+        description: "Simulate a post-switch health-check failure"
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  blue-green-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      RESOURCE_GROUP: ${{ vars.AKS_RESOURCE_GROUP }}
+      AKS_CLUSTER: ${{ vars.AKS_CLUSTER_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$AKS_CLUSTER" \
+            --overwrite-existing
+
+      - name: Detect active and target environments
+        id: colors
+        shell: bash
+        run: |
+          ACTIVE=$(kubectl get service frontend -n production \
+            -o jsonpath='{.spec.selector.color}')
+
+          if [ "$ACTIVE" = "blue" ]; then
+            TARGET="green"
+          else
+            TARGET="blue"
+          fi
+
+          echo "Active environment: $ACTIVE"
+          echo "Target environment: $TARGET"
+
+          echo "active=$ACTIVE" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy target environment
+        env:
+          TARGET: ${{ steps.colors.outputs.target }}
+        run: |
+          if [ "$TARGET" = "green" ]; then
+            DEPLOYMENT="frontend-green"
+          else
+            DEPLOYMENT="frontend"
+          fi
+
+          IMAGE="$ACR_LOGIN_SERVER/koalatech-frontend:$IMAGE_TAG"
+
+          echo "Deploying $IMAGE to $DEPLOYMENT"
+
+          kubectl set image deployment/$DEPLOYMENT \
+            frontend="$IMAGE" \
+            -n production
+
+          kubectl rollout status deployment/$DEPLOYMENT \
+            -n production \
+            --timeout=300s
+
+      - name: Pre-switch health check
+        env:
+          TARGET: ${{ steps.colors.outputs.target }}
+        run: |
+          if [ "$TARGET" = "green" ]; then
+            TEST_SERVICE="frontend-green-test"
+          else
+            kubectl apply -n production -f - <<'EOF'
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: frontend-blue-test
+          spec:
+            type: ClusterIP
+            selector:
+              app: frontend
+              color: blue
+            ports:
+              - port: 80
+                targetPort: 80
+          EOF
+
+            TEST_SERVICE="frontend-blue-test"
+          fi
+
+          echo "Testing target environment: $TARGET"
+          echo "Using service: $TEST_SERVICE"
+
+          kubectl run blue-green-test \
+            --rm -i \
+            --restart=Never \
+            -n production \
+            --image=curlimages/curl:8.10.1 \
+            -- curl --fail --silent --show-error \
+            --max-time 10 \
+            "http://$TEST_SERVICE"
+
+      - name: Switch production traffic
+        env:
+          TARGET: ${{ steps.colors.outputs.target }}
+        run: |
+          kubectl patch service frontend \
+            -n production \
+            --type=merge \
+            -p "{\"spec\":{\"selector\":{\"app\":\"frontend\",\"color\":\"$TARGET\"}}}"
+
+          echo "Production traffic switched to $TARGET"
+
+      - name: Post-switch health check
+        id: health
+        continue-on-error: true
+        env:
+          TARGET: ${{ steps.colors.outputs.target }}
+          SIMULATE_FAILURE: ${{ inputs.simulate_failure }}
+        run: |
+          if [ "$SIMULATE_FAILURE" = "true" ]; then
+            echo "Simulating post-switch health-check failure"
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            --max-time 15 \
+            http://$(
+              kubectl get service frontend \
+                -n production \
+                -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+            )
+
+      - name: Automatic rollback
+        if: steps.health.outcome == 'failure'
+        env:
+          ACTIVE: ${{ steps.colors.outputs.active }}
+        run: |
+          echo "Post-switch health check failed."
+          echo "Rolling production traffic back to $ACTIVE."
+
+          kubectl patch service frontend \
+            -n production \
+            --type=merge \
+            -p "{\"spec\":{\"selector\":{\"app\":\"frontend\",\"color\":\"$ACTIVE\"}}}"
+
+          echo "Rollback completed."
+
+      - name: Verify final production state
+        run: |
+          FINAL=$(kubectl get service frontend \
+            -n production \
+            -o jsonpath='{.spec.selector.color}')
+
+          echo "Final active environment: $FINAL"
+
+          kubectl get service frontend -n production
+          kubectl get pods -n production -l app=frontend --show-labels
+
+          if [ "${{ steps.health.outcome }}" = "failure" ]; then
+            if [ "$FINAL" != "${{ steps.colors.outputs.active }}" ]; then
+              echo "Rollback verification failed."
+              exit 1
+            fi
+
+            echo "Rollback verification successful."
+          else
+            if [ "$FINAL" != "${{ steps.colors.outputs.target }}" ]; then
+              echo "Traffic switch verification failed."
+              exit 1
+            fi
+
+            echo "Blue/Green deployment successful."
+          fi

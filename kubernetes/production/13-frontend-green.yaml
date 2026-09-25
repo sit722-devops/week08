@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-green
+  namespace: production
+  labels:
+    app: frontend
+    color: green
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+      color: green
+  template:
+    metadata:
+      labels:
+        app: frontend
+        color: green
+    spec:
+      containers:
+        - name: frontend
+          image: placeholder
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-green-test
+  namespace: production
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+    color: green
+  ports:
+    - port: 80
+      targetPort: 80

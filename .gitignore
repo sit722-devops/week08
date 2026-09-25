@@ -197,3 +197,11 @@ cython_debug/
 .cursorindexingignore
 
 node_modules/
+# Local Azure credentials
+azure-credentials.json
+
+# Terraform local files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars

@@ -13,6 +13,40 @@ on:
 jobs:
 
   # =========================================================
+  # Terraform Infrastructure
+  # =========================================================
+  terraform:
+    name: Terraform Validate and Plan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: terraform
+        env:
+          TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: terraform plan -input=false
+
+
+  # =========================================================
   # Backend Tests
   # =========================================================
   backend-test:
@@ -101,7 +135,6 @@ jobs:
         run: |
           pytest -v
 
-
   # =========================================================
   # Build and Push Docker Images
   # =========================================================
@@ -160,7 +193,125 @@ jobs:
             -t ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
             ./${{ matrix.service }}
 
+      - name: Login to Docker Hub for Docker Scout
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker Scout vulnerability scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: local://${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+          only-severities: critical,high
+
       - name: Push Docker image with commit SHA
         run: |
           docker push \
             ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+  # =========================================================
+  # Deploy to AKS
+  # =========================================================
+  deploy-aks:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+
+    needs:
+      - terraform
+      - backend-test
+      - build-and-push
+
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
+            --name ${{ vars.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Create production namespace
+        run: |
+          kubectl create namespace production \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+      - name: Create PostgreSQL secret
+        run: |
+          kubectl create secret generic postgres-secret \
+            --namespace production \
+            --from-literal=POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+      - name: Create application secret
+        run: |
+          kubectl create secret generic application-secret \
+            --namespace production \
+            --from-literal=POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --from-literal=JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
+            --from-literal=DEFAULT_ADMIN_USERNAME="${{ secrets.DEFAULT_ADMIN_USERNAME }}" \
+            --from-literal=DEFAULT_ADMIN_EMAIL="${{ secrets.DEFAULT_ADMIN_EMAIL }}" \
+            --from-literal=DEFAULT_ADMIN_PASSWORD="${{ secrets.DEFAULT_ADMIN_PASSWORD }}" \
+            --from-literal=AZURE_STORAGE_CONNECTION_STRING="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f kubernetes/production/
+
+      - name: Update application images
+        run: |
+          kubectl set image deployment/frontend \
+            frontend=${{ vars.ACR_LOGIN_SERVER }}/koalatech-frontend:${{ github.sha }} \
+            -n production
+
+          kubectl set image deployment/user-service \
+            user-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-user-service:${{ github.sha }} \
+            -n production
+
+          kubectl set image deployment/student-service \
+            student-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-student-service:${{ github.sha }} \
+            -n production
+
+          kubectl set image deployment/lecturer-service \
+            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecturer-service:${{ github.sha }} \
+            -n production
+
+          kubectl set image deployment/course-service \
+            course-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-course-service:${{ github.sha }} \
+            -n production
+
+          kubectl set image deployment/enrollment-service \
+            enrollment-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-enrollment-service:${{ github.sha }} \
+            -n production
+
+      - name: Wait for application rollout
+        run: |
+          kubectl rollout status deployment/frontend -n production --timeout=300s
+          kubectl rollout status deployment/user-service -n production --timeout=300s
+          kubectl rollout status deployment/student-service -n production --timeout=300s
+          kubectl rollout status deployment/lecturer-service -n production --timeout=300s
+          kubectl rollout status deployment/course-service -n production --timeout=300s
+          kubectl rollout status deployment/enrollment-service -n production --timeout=300s
+
+      - name: Show deployed resources
+        run: |
+          kubectl get pods -n production
+          kubectl get services -n production
+          kubectl get pvc -n production
+
