@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-  
+
   # Manual trigger for the workflow
   workflow_dispatch:
 
@@ -159,6 +159,15 @@ jobs:
             --platform linux/amd64 \
             -t ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
             ./${{ matrix.service }}
+
+      - name: Docker Scout vulnerability scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+          only-severities: critical,high,medium
+          dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Push Docker image with commit SHA
         run: |

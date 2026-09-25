@@ -1,0 +1,51 @@
+name: 00 - Terraform Infrastructure
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform/**"
+
+jobs:
+  terraform:
+    name: Terraform Validate and Plan
+    runs-on: ubuntu-latest
+
+    env:
+      TF_VAR_location: "Australia East"
+      TF_VAR_resource_group_name: "koalatech-week08-rg"
+      TF_VAR_acr_name: "naras722week08acr"
+      TF_VAR_storage_account_name: "naras722week08storage"
+      TF_VAR_aks_cluster_name: "naras722-week08-aks"
+      TF_VAR_aks_dns_prefix: "naras722-week08"
+      TF_VAR_aks_node_count: "3"
+      TF_VAR_aks_node_vm_size: "Standard_D2s_v3"
+      TF_VAR_environment: "development"
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -input=false
+
