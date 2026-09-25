@@ -310,4 +310,4 @@ After the production deployment completes:
 - Find the external IP of the production frontend service.
 - Access the production application.
 - Confirm that the application is working correctly.
-- Verify that production is running the same image SHA that was tested in staging.
+- Verify that production is running the same image SHA that was tested in staging...

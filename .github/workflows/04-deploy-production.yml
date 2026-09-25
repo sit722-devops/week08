@@ -1,18 +1,83 @@
 name: 04 - Deploy to Production
 
 on:
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
     inputs:
       image_tag:
         description: "Tested image SHA to deploy"
         required: true
         type: string
+        default: "latest"
 
 jobs:
+  # ==================================================================
+  # STAGE 1: SECURITY SCANNING (Shift-Left DevSecOps)
+  # ==================================================================
+  security-scan:
+    name: Docker Scout Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build user-service Image for Scanning
+        run: docker build -t user-service:test ./user-service
+
+      - name: Run Docker Scout Vulnerability Scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: user-service:test
+          only-severities: critical,high
+          exit-code: false
+
+  # ==================================================================
+  # STAGE 2: INFRASTRUCTURE AS CODE (Terraform)
+  # ==================================================================
+  terraform:
+    name: Provision Infrastructure (Terraform)
+    needs: security-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Operations
+        run: |
+          cd terraform
+          terraform init
+          terraform fmt -check
+          terraform plan -out=tfplan
+          terraform apply -auto-approve tfplan
+
+  # ==================================================================
+  # STAGE 3: APPLICATION DEPLOYMENT TO AKS
+  # ==================================================================
   deploy-production:
     name: Deploy to Production
+    needs: terraform
     runs-on: ubuntu-latest
-
     environment:
       name: production
 
@@ -21,15 +86,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Login to Azure
-        uses: azure/login@v3
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Get AKS credentials
         run: |
           az aks get-credentials \
-            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
-            --name ${{ vars.AKS_CLUSTER_NAME }} \
+            --resource-group ${{ vars.AKS_RESOURCE_GROUP || secrets.AZURE_RG }} \
+            --name ${{ vars.AKS_CLUSTER_NAME || secrets.AKS_CLUSTER_NAME }} \
             --overwrite-existing
 
       - name: Create production namespace
@@ -66,47 +131,11 @@ jobs:
           kubectl apply \
             -f kubernetes/production/
 
-      - name: Update frontend image
-        run: |
-          kubectl set image deployment/frontend \
-            frontend=${{ vars.ACR_LOGIN_SERVER }}/koalatech-frontend:${{ inputs.image_tag }} \
-            -n production
-
       - name: Update user-service image
         run: |
           kubectl set image deployment/user-service \
-            user-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-user-service:${{ inputs.image_tag }} \
+            user-service=${{ vars.ACR_LOGIN_SERVER || secrets.ACR_NAME }}.azurecr.io/koalatech-user-service:${{ inputs.image_tag || github.sha }} \
             -n production
-
-      - name: Update student-service image
-        run: |
-          kubectl set image deployment/student-service \
-            student-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-student-service:${{ inputs.image_tag }} \
-            -n production
-
-      - name: Update lecturer-service image
-        run: |
-          kubectl set image deployment/lecturer-service \
-            lecturer-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-lecturer-service:${{ inputs.image_tag }} \
-            -n production
-
-      - name: Update course-service image
-        run: |
-          kubectl set image deployment/course-service \
-            course-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-course-service:${{ inputs.image_tag }} \
-            -n production
-
-      - name: Update enrollment-service image
-        run: |
-          kubectl set image deployment/enrollment-service \
-            enrollment-service=${{ vars.ACR_LOGIN_SERVER }}/koalatech-enrollment-service:${{ inputs.image_tag }} \
-            -n production
-
-      - name: Wait for frontend rollout
-        run: |
-          kubectl rollout status deployment/frontend \
-            -n production \
-            --timeout=300s
 
       - name: Wait for user-service rollout
         run: |
@@ -114,32 +143,44 @@ jobs:
             -n production \
             --timeout=300s
 
-      - name: Wait for student-service rollout
-        run: |
-          kubectl rollout status deployment/student-service \
-            -n production \
-            --timeout=300s
-
-      - name: Wait for lecturer-service rollout
-        run: |
-          kubectl rollout status deployment/lecturer-service \
-            -n production \
-            --timeout=300s
-
-      - name: Wait for course-service rollout
-        run: |
-          kubectl rollout status deployment/course-service \
-            -n production \
-            --timeout=300s
-
-      - name: Wait for enrollment-service rollout
-        run: |
-          kubectl rollout status deployment/enrollment-service \
-            -n production \
-            --timeout=300s
-
       - name: Show production resources
         run: |
           kubectl get pods -n production
           kubectl get services -n production
-          kubectl get pvc -n production
+
+  # ==================================================================
+  # STAGE 4: MONITORING & OBSERVABILITY (Prometheus & Grafana)
+  # ==================================================================
+  deploy-monitoring:
+    name: Deploy Prometheus & Grafana
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ vars.AKS_RESOURCE_GROUP || secrets.AZURE_RG }} \
+            --name ${{ vars.AKS_CLUSTER_NAME || secrets.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.13.0'
+
+      - name: Deploy Kube-Prometheus-Stack
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --set grafana.service.type=LoadBalancer
