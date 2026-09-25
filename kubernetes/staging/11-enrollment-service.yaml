@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: enrollment-service
-          image: placeholder
+          image: sit722week08acr224848845.azurecr.io/koalatech-enrollment-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

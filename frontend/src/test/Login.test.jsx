@@ -45,6 +45,12 @@ describe("Login page", () => {
     ).toBeInTheDocument();
 
     expect(
+      screen.getByText(
+        "Successfully deployed automatically through GitHub Actions"
+      )
+    ).toBeInTheDocument();
+
+    expect(
       screen.getByRole("textbox", {
         name: /username/i,
       })
@@ -53,7 +59,6 @@ describe("Login page", () => {
     expect(
       screen.getByLabelText(/password/i)
     ).toBeInTheDocument();
-
     expect(
       screen.getByRole("button", {
         name: /login/i,

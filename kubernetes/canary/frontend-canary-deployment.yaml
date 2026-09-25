@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-canary
+  namespace: staging
+  labels:
+    app: frontend
+    track: canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+      track: canary
+  template:
+    metadata:
+      labels:
+        app: frontend
+        track: canary
+    spec:
+      containers:
+        - name: frontend
+          image: CANARY_IMAGE
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3

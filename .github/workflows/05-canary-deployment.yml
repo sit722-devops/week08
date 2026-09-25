@@ -1,0 +1,313 @@
+name: 05 - Canary Deployment and Automatic Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Canary demonstration scenario"
+        required: true
+        default: healthy
+        type: choice
+        options:
+          - healthy
+          - faulty
+
+permissions:
+  contents: read
+
+env:
+  STAGING_NAMESPACE: staging
+  CANARY_DEPLOYMENT: frontend-canary
+  CANARY_SERVICE: frontend-canary
+  STABLE_DEPLOYMENT: frontend
+
+jobs:
+  canary-deployment:
+    name: Canary Deployment, Validation and Recovery
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        shell: bash
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ vars.AKS_RESOURCE_GROUP }}" \
+            --name "${{ vars.AKS_CLUSTER_NAME }}" \
+            --overwrite-existing
+
+          kubectl get nodes
+
+      - name: Capture current stable release
+        id: stable
+        shell: bash
+        run: |
+          STABLE_IMAGE=$(kubectl get deployment "${STABLE_DEPLOYMENT}" \
+            -n "${STAGING_NAMESPACE}" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+          echo "Current stable image: ${STABLE_IMAGE}"
+          echo "image=${STABLE_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify stable application before canary
+        shell: bash
+        run: |
+          kubectl rollout status deployment/"${STABLE_DEPLOYMENT}" \
+            -n "${STAGING_NAMESPACE}" \
+            --timeout=180s
+
+          STABLE_IP=$(kubectl get service frontend \
+            -n "${STAGING_NAMESPACE}" \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+          if [ -z "${STABLE_IP}" ]; then
+            STABLE_IP=$(kubectl get service frontend \
+              -n "${STAGING_NAMESPACE}" \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          fi
+
+          echo "Stable frontend address: ${STABLE_IP}"
+
+          curl --fail \
+            --silent \
+            --show-error \
+            --retry 10 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            "http://${STABLE_IP}/" \
+            > /dev/null
+
+          echo "Stable application is healthy before canary deployment."
+
+      - name: Select canary image
+        id: candidate
+        shell: bash
+        run: |
+          if [ "${{ inputs.scenario }}" = "healthy" ]; then
+            CANARY_IMAGE="${{ steps.stable.outputs.image }}"
+            echo "Healthy scenario selected."
+            echo "Candidate image: ${CANARY_IMAGE}"
+          else
+            CANARY_IMAGE="nginx:1.27-alpine"
+            echo "Faulty scenario selected."
+            echo "The canary will be configured with an invalid health endpoint."
+            echo "Candidate image: ${CANARY_IMAGE}"
+          fi
+
+          echo "image=${CANARY_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy canary candidate
+        shell: bash
+        run: |
+          sed \
+            "s|CANARY_IMAGE|${{ steps.candidate.outputs.image }}|g" \
+            kubernetes/canary/frontend-canary-deployment.yaml \
+            > /tmp/frontend-canary-deployment.yaml
+
+          if [ "${{ inputs.scenario }}" = "faulty" ]; then
+            echo "Injecting deliberately invalid health endpoint for rollback demonstration."
+
+            sed -i \
+              's|path: /$|path: /deliberately-faulty-health-endpoint|g' \
+              /tmp/frontend-canary-deployment.yaml
+          fi
+
+          kubectl apply \
+            -f /tmp/frontend-canary-deployment.yaml
+
+          kubectl apply \
+            -f kubernetes/canary/frontend-canary-service.yaml
+
+          echo
+          echo "Stable and canary deployments:"
+          kubectl get deployments \
+            -n "${STAGING_NAMESPACE}" \
+            -l app=frontend \
+            -o wide
+
+      - name: Wait for canary rollout
+        id: rollout
+        continue-on-error: true
+        shell: bash
+        run: |
+          kubectl rollout status deployment/"${CANARY_DEPLOYMENT}" \
+            -n "${STAGING_NAMESPACE}" \
+            --timeout=120s
+
+      - name: Validate canary release
+        id: validation
+        if: steps.rollout.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "Starting automated canary health validation..."
+
+          kubectl run canary-health-check \
+            --rm \
+            -i \
+            --restart=Never \
+            --image=curlimages/curl:8.12.1 \
+            -n "${STAGING_NAMESPACE}" \
+            -- \
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --max-time 10 \
+              "http://${CANARY_SERVICE}/" \
+              > /dev/null
+
+          echo "Canary HTTP health validation passed."
+
+          echo "Canary candidate passed all validation checks."
+
+      - name: Promote healthy canary
+        if: >-
+          inputs.scenario == 'healthy' &&
+          steps.rollout.outcome == 'success' &&
+          steps.validation.outcome == 'success'
+        shell: bash
+        run: |
+          echo "Promoting validated canary image to stable deployment..."
+
+          kubectl set image deployment/"${STABLE_DEPLOYMENT}" \
+            frontend="${{ steps.candidate.outputs.image }}" \
+            -n "${STAGING_NAMESPACE}"
+
+          kubectl rollout status deployment/"${STABLE_DEPLOYMENT}" \
+            -n "${STAGING_NAMESPACE}" \
+            --timeout=180s
+
+          echo
+          echo "Canary promotion completed successfully."
+
+      - name: Automatic rollback and recovery
+        if: >-
+          inputs.scenario == 'faulty' ||
+          steps.rollout.outcome == 'failure' ||
+          steps.validation.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "Canary validation failed."
+          echo "Automatic recovery has been triggered."
+          echo
+          echo "Stable deployment was never replaced."
+          echo "Removing failed canary workload..."
+
+          kubectl delete deployment "${CANARY_DEPLOYMENT}" \
+            -n "${STAGING_NAMESPACE}" \
+            --ignore-not-found=true
+
+          kubectl delete service "${CANARY_SERVICE}" \
+            -n "${STAGING_NAMESPACE}" \
+            --ignore-not-found=true
+
+          echo
+          echo "Verifying original stable deployment..."
+
+          kubectl rollout status deployment/"${STABLE_DEPLOYMENT}" \
+            -n "${STAGING_NAMESPACE}" \
+            --timeout=180s
+
+          CURRENT_IMAGE=$(kubectl get deployment "${STABLE_DEPLOYMENT}" \
+            -n "${STAGING_NAMESPACE}" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+          echo "Original stable image : ${{ steps.stable.outputs.image }}"
+          echo "Current stable image  : ${CURRENT_IMAGE}"
+
+          if [ "${CURRENT_IMAGE}" != "${{ steps.stable.outputs.image }}" ]; then
+            echo "Stable image changed unexpectedly."
+            exit 1
+          fi
+
+          STABLE_IP=$(kubectl get service frontend \
+            -n "${STAGING_NAMESPACE}" \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+          if [ -z "${STABLE_IP}" ]; then
+            STABLE_IP=$(kubectl get service frontend \
+              -n "${STAGING_NAMESPACE}" \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          fi
+
+          curl --fail \
+            --silent \
+            --show-error \
+            --retry 10 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            "http://${STABLE_IP}/" \
+            > /dev/null
+
+          echo
+          echo "AUTOMATIC RECOVERY SUCCESSFUL."
+          echo "Failed canary removed."
+          echo "Original stable release remains healthy."
+
+      - name: Remove successful canary
+        if: >-
+          inputs.scenario == 'healthy' &&
+          steps.rollout.outcome == 'success' &&
+          steps.validation.outcome == 'success'
+        shell: bash
+        run: |
+          echo "Removing temporary canary resources after promotion..."
+
+          kubectl delete deployment "${CANARY_DEPLOYMENT}" \
+            -n "${STAGING_NAMESPACE}" \
+            --ignore-not-found=true
+
+          kubectl delete service "${CANARY_SERVICE}" \
+            -n "${STAGING_NAMESPACE}" \
+            --ignore-not-found=true
+
+      - name: Final deployment evidence
+        if: always()
+        shell: bash
+        run: |
+          echo "============================================"
+          echo "FINAL CANARY DEPLOYMENT STATE"
+          echo "============================================"
+
+          kubectl get deployments \
+            -n "${STAGING_NAMESPACE}" \
+            -o wide
+
+          echo
+          kubectl get pods \
+            -n "${STAGING_NAMESPACE}" \
+            -o wide
+
+          echo
+          kubectl get services \
+            -n "${STAGING_NAMESPACE}"
+
+      - name: Final scenario result
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ inputs.scenario }}" = "healthy" ]; then
+            if [ "${{ steps.rollout.outcome }}" != "success" ] || \
+               [ "${{ steps.validation.outcome }}" != "success" ]; then
+              echo "Healthy canary scenario failed."
+              exit 1
+            fi
+
+            echo "============================================"
+            echo "HEALTHY CANARY SUCCESSFULLY PROMOTED"
+            echo "============================================"
+          else
+            echo "============================================"
+            echo "FAULTY CANARY REJECTED"
+            echo "STABLE RELEASE RETAINED"
+            echo "AUTOMATIC RECOVERY SUCCESSFUL"
+            echo "============================================"
+          fi

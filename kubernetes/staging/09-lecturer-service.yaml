@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: lecturer-service
-          image: placeholder
+          image: sit722week08acr224848845.azurecr.io/koalatech-lecturer-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

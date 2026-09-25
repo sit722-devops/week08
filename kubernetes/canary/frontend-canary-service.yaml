@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-canary
+  namespace: staging
+  labels:
+    app: frontend
+    track: canary
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+    track: canary
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

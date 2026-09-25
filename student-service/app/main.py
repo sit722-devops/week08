@@ -2,7 +2,13 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Histogram,
+    generate_latest,
+)
 from sqlalchemy.exc import OperationalError
 
 from app.db import Base, engine
@@ -16,6 +22,20 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+SERVICE_NAME = "student-service"
+
+HTTP_REQUESTS_TOTAL = Counter(
+    "koalatech_http_requests_total",
+    "Total number of HTTP requests.",
+    ["service", "method", "path", "status_code"],
+)
+
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "koalatech_http_request_duration_seconds",
+    "HTTP request duration in seconds.",
+    ["service", "method", "path"],
+)
 
 
 def initialise_database() -> None:
@@ -79,13 +99,38 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def prometheus_metrics(
+    request: Request,
+    call_next,
+):
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start_time
+
+    route = request.scope.get("route")
+    path = getattr(route, "path", request.url.path)
+
+    HTTP_REQUESTS_TOTAL.labels(
+        service=SERVICE_NAME,
+        method=request.method,
+        path=path,
+        status_code=str(response.status_code),
+    ).inc()
+
+    HTTP_REQUEST_DURATION_SECONDS.labels(
+        service=SERVICE_NAME,
+        method=request.method,
+        path=path,
+    ).observe(duration)
+
+    return response
+
+
 app.include_router(students.router)
 
 
-@app.get(
-    "/",
-    tags=["Health"],
-)
+@app.get("/", tags=["Health"])
 def root() -> dict[str, str]:
     return {
         "message": (
@@ -94,12 +139,20 @@ def root() -> dict[str, str]:
     }
 
 
-@app.get(
-    "/health",
-    tags=["Health"],
-)
+@app.get("/health", tags=["Health"])
 def health_check() -> dict[str, str]:
     return {
         "status": "healthy",
-        "service": "student-service",
+        "service": SERVICE_NAME,
     }
+
+
+@app.get(
+    "/metrics",
+    include_in_schema=False,
+)
+def metrics() -> Response:
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )

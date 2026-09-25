@@ -98,9 +98,15 @@ const Login = () => {
 
           <Typography
             color="text.secondary"
-            sx={{ mb: 3 }}
           >
             Sign in to continue
+          </Typography>
+
+          <Typography
+            color="success.main"
+            sx={{ mb: 3, fontWeight: 600 }}
+          >
+            Successfully deployed automatically through GitHub Actions
           </Typography>
 
           {error && (
