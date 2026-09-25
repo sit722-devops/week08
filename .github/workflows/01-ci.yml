@@ -1,12 +1,14 @@
 name: 01 - CI
 
 on:
-  # Trigger the workflow on push to main branch
+  pull_request:
+    branches:
+      - main
+
   push:
     branches:
       - main
-  
-  # Manual trigger for the workflow
+
   workflow_dispatch:
 
 
