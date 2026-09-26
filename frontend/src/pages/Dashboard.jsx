@@ -199,7 +199,7 @@ const Dashboard = () => {
         </Typography>
 
         <Typography color="text.secondary">
-          Welcome to KoalaTech University
+          KoalaTech Course Platform – Continuous Deployment v2
         </Typography>
       </Box>
 
