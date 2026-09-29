@@ -103,6 +103,14 @@ const Login = () => {
             Sign in to continue
           </Typography>
 
+          <Alert
+            severity="success"
+            variant="filled"
+            sx={{ mb: 3, fontWeight: "bold" }}
+          >
+            Release 2.0 – deployed automatically via Continuous Deployment
+          </Alert>
+
           {error && (
             <Alert
               severity="error"

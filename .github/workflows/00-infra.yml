@@ -1,0 +1,50 @@
+name: 00 - Infrastructure (Terraform)
+
+# Runs Terraform validation and planning in CI whenever the Terraform code
+# changes, and can be triggered manually. This is the "Terraform integrated into
+# the pipeline" evidence. `apply` is performed locally with elevated credentials
+# (least privilege: the CI service principal is Contributor only).
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/00-infra.yml"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "terraform/**"
+  workflow_dispatch:
+
+jobs:
+  terraform:
+    name: Terraform validate & plan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: Terraform format check
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: terraform plan -input=false

@@ -1,0 +1,30 @@
+# Helm values for prometheus-community/kube-prometheus-stack
+# Installs Prometheus, Grafana, Alertmanager, node-exporter and kube-state-metrics.
+
+grafana:
+  # Demo credentials — CHANGE THIS before submitting/sharing.
+  adminPassword: "ChangeMe123!"
+  service:
+    type: ClusterIP        # access via `kubectl port-forward` (see setup guide)
+
+prometheus:
+  prometheusSpec:
+    # IMPORTANT: allows Prometheus to discover ServiceMonitors you create yourself
+    # (like servicemonitor-user-service.yaml), not only the chart's own ones.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 6h
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+# Keep the footprint small for a student cluster
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi

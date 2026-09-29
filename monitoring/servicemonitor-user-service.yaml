@@ -1,0 +1,26 @@
+# ServiceMonitor: tells Prometheus to scrape user-service /metrics.
+#
+# NOTE: this only produces data if user-service actually exposes a /metrics
+# endpoint. FastAPI does not by default — see the "Optional: app metrics"
+# section of the setup guide to add it. Kubernetes/cluster metrics
+# (CPU, memory, pods, nodes) are collected automatically WITHOUT this file,
+# so your Grafana dashboard will show data either way.
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: user-service
+  namespace: monitoring
+  labels:
+    release: monitoring        # must match the Helm release name so it's picked up
+spec:
+  namespaceSelector:
+    matchNames:
+      - default                # namespace where user-service runs (change if different)
+  selector:
+    matchLabels:
+      app: user-service        # must match the labels on your user-service Service
+  endpoints:
+    - port: http               # the NAME of the port on the Service (not the number)
+      path: /metrics
+      interval: 15s
