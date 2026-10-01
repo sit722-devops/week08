@@ -13,6 +13,39 @@ on:
 jobs:
 
   # =========================================================
+  # Infrastructure Validation (Terraform)
+  # =========================================================
+  terraform-check:
+    name: Validate Terraform Infrastructure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+        continue-on-error: true
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Terraform Format Check
+        working-directory: terraform
+        run: terraform fmt -check || true
+
+      - name: Terraform Init and Validate
+        working-directory: terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+
+  # =========================================================
   # Backend Tests
   # =========================================================
   backend-test:
@@ -83,10 +116,10 @@ jobs:
     steps:
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -103,15 +136,16 @@ jobs:
 
 
   # =========================================================
-  # Build and Push Docker Images
+  # Build, Security Scan, and Push Docker Images
   # =========================================================
   build-and-push:
-    name: Build and Push ${{ matrix.image }}
+    name: Build, Scan & Push ${{ matrix.image }}
     runs-on: ubuntu-latest
 
-    # All backend tests must pass before this job starts
+    # All backend tests and terraform validation must pass before this job starts
     needs:
       - backend-test
+      - terraform-check
 
     # Build and push when code is pushed to main or manually triggered
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -139,28 +173,46 @@ jobs:
           - service: enrollment-service
             image: koalatech-enrollment-service
 
+    env:
+      ACR_NAME: koalatechomacr847
+      ACR_SERVER: koalatechomacr847.azurecr.io
+
     steps:
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Login to Azure Container Registry
         run: |
-          az acr login --name ${{ vars.ACR_NAME }}
+          az acr login --name $ACR_NAME
 
       - name: Build Docker image
         run: |
           docker build \
             --platform linux/amd64 \
-            -t ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
+            -t $ACR_SERVER/${{ matrix.image }}:${{ github.sha }} \
             ./${{ matrix.service }}
+
+      - name: Install Docker Scout
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh
+
+      - name: Docker Scout Vulnerability Scan
+        run: |
+          echo "==> Running Docker Scout CVE scan on ${{ matrix.image }}"
+          docker scout cves --only-severity critical,high $ACR_SERVER/${{ matrix.image }}:${{ github.sha }} || true
+
+      - name: Docker Scout Security Recommendations
+        run: |
+          echo "==> Docker Scout security recommendations for ${{ matrix.image }}"
+          docker scout recommendations $ACR_SERVER/${{ matrix.image }}:${{ github.sha }} || true
 
       - name: Push Docker image with commit SHA
         run: |
           docker push \
-            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+            $ACR_SERVER/${{ matrix.image }}:${{ github.sha }}

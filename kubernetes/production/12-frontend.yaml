@@ -1,17 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: frontend
+  name: frontend-blue
   namespace: production
+  labels:
+    app: frontend
+    color: blue
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: frontend
+      color: blue
   template:
     metadata:
       labels:
         app: frontend
+        color: blue
     spec:
       containers:
         - name: frontend
@@ -19,8 +24,45 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 80
+          env:
+            - name: APP_COLOR
+              value: blue
 
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-green
+  namespace: production
+  labels:
+    app: frontend
+    color: green
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+      color: green
+  template:
+    metadata:
+      labels:
+        app: frontend
+        color: green
+    spec:
+      containers:
+        - name: frontend
+          image: placeholder
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          env:
+            - name: APP_COLOR
+              value: green
+
+---
+# Live Service: the single traffic switch. Its selector.color decides which
+# colour deployment receives real users. The deploy pipeline patches this
+# selector only after the idle colour has passed the smoke test.
 apiVersion: v1
 kind: Service
 metadata:
@@ -30,6 +72,24 @@ spec:
   type: LoadBalancer
   selector:
     app: frontend
+    color: blue
+  ports:
+    - port: 80
+      targetPort: 80
+
+---
+# Preview Service: always points at whichever colour is currently idle, so the
+# pipeline can smoke test the new release before it takes production traffic.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-preview
+  namespace: production
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+    color: green
   ports:
     - port: 80
       targetPort: 80
