@@ -1,3 +1,4 @@
+# Week 8 continuous delivery pipeline test enabled
 import logging
 import os
 import time
