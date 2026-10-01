@@ -197,6 +197,14 @@ const Dashboard = () => {
         >
           Dashboard
         </Typography>
+        <Typography
+          variant="h6"
+          color="primary"
+          fontWeight={700}
+          sx={{ mt: 0.5 }}
+        >
+          Continuous Deployment Release
+        </Typography>
 
         <Typography color="text.secondary">
           Welcome to KoalaTech University
