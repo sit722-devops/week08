@@ -7,6 +7,10 @@ server {
 
     client_max_body_size 10M;
 
+    # Identifies which colour (blue/green) served this response, so the
+    # smoke test and the demo video can prove which deployment is live.
+    add_header X-App-Color "${APP_COLOR}" always;
+
     location /api/users/ {
         proxy_pass http://user-service:8000/;
         proxy_http_version 1.1;

@@ -24,7 +24,10 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Rendered by the base image's docker-entrypoint.d envsubst step at container
+# start, so APP_COLOR can be set per-Deployment without rebuilding the image.
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV APP_COLOR=unknown
 
 COPY --from=build /app/dist /usr/share/nginx/html
 

@@ -197,3 +197,24 @@ cython_debug/
 .cursorindexingignore
 
 node_modules/
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfplan
+tfplan
+
+# Terraform-generated Kubernetes manifests (contain live secrets, regenerate via `terraform apply`)
+kubernetes/07-application-secret.yaml
+kubernetes/08-user-service.yaml
+kubernetes/09-student-service.yaml
+kubernetes/10-lecturer-service.yaml
+kubernetes/11-course-service.yaml
+kubernetes/12-enrollment-service.yaml
+kubernetes/13-frontend.yaml
+
