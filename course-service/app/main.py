@@ -3,6 +3,7 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.exc import OperationalError
 
 from app.db import Base, engine
@@ -82,3 +83,10 @@ def health_check() -> dict[str, str]:
         "status": "healthy",
         "service": "course-service",
     }
+
+
+# Expose Prometheus metrics at /metrics (Task 10.2D)
+Instrumentator().instrument(app).expose(
+    app,
+    include_in_schema=False,
+)

@@ -1,0 +1,30 @@
+# Values for the kube-prometheus-stack Helm chart (Task 10.2D)
+# Sized for a 3 x Standard_D2s_v3 AKS cluster that also runs staging + production.
+
+alertmanager:
+  enabled: false   # alert routing is out of scope; saves node capacity
+
+grafana:
+  defaultDashboardsTimezone: Australia/Melbourne
+  service:
+    type: ClusterIP   # accessed via kubectl port-forward, no extra public IP
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+prometheus:
+  prometheusSpec:
+    retention: 2d
+    scrapeInterval: 30s
+    # Pick up my ServiceMonitor even without the Helm release label
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        memory: 1536Mi

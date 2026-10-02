@@ -197,3 +197,9 @@ cython_debug/
 .cursorindexingignore
 
 node_modules/
+# Terraform (Task 10.2D) - never commit state or plans
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+crash.log
