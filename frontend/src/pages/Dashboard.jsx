@@ -190,16 +190,24 @@ const Dashboard = () => {
 
   return (
     <>
-      <Box sx={{ mb: 3 }}>
+      <Box
+        sx={{
+          mb: 3,
+          p: 3,
+          borderRadius: 2,
+          backgroundColor: "#0d47a1",
+          color: "white",
+        }}
+      >
         <Typography
           variant="h4"
           fontWeight={600}
         >
-          Dashboard
+          KoalaTech Continuous Deployment
         </Typography>
 
-        <Typography color="text.secondary">
-          Welcome to KoalaTech University
+        <Typography sx={{ color: "#e3f2fd" }}>
+          Task 9.3C production release
         </Typography>
       </Box>
 
