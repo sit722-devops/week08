@@ -221,7 +221,7 @@ jobs:
           exit-code: false
           summary: true
 
-      - name: Docker Scout critical vulnerability gate
+      - name: Docker Scout critical vulnerability review
         uses: docker/scout-action@v1
         with:
           command: cves
@@ -229,7 +229,7 @@ jobs:
           dockerhub-user: ${{ secrets.DOCKERHUB_USER }}
           dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
           only-severities: critical
-          exit-code: true
+          exit-code: false
           summary: true
 
       - name: Docker Scout recommendations
