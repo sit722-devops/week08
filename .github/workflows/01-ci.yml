@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/continuous-deployment
   
   # Manual trigger for the workflow
   workflow_dispatch:
@@ -101,6 +102,38 @@ jobs:
         run: |
           pytest -v
 
+  # =========================================================
+  # Frontend Tests
+  # =========================================================
+  frontend-test:
+    name: Test frontend
+    runs-on: ubuntu-latest
+
+    env:
+      VITE_USER_SERVICE_URL: http://localhost:8001
+      VITE_STUDENT_SERVICE_URL: http://localhost:8002
+      VITE_LECTURER_SERVICE_URL: http://localhost:8003
+      VITE_COURSE_SERVICE_URL: http://localhost:8004
+      VITE_ENROLLMENT_SERVICE_URL: http://localhost:8005
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: |
+          npm install
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: |
+          npm run test:run
 
   # =========================================================
   # Build and Push Docker Images
@@ -112,6 +145,7 @@ jobs:
     # All backend tests must pass before this job starts
     needs:
       - backend-test
+      - frontend-test
 
     # Build and push when code is pushed to main or manually triggered
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -159,6 +193,18 @@ jobs:
             --platform linux/amd64 \
             -t ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
             ./${{ matrix.service }}
+
+      - name: Docker Scout vulnerability scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+          only-severities: critical,high
+          exit-code: true
+          summary: true
+        env:
+          DOCKER_SCOUT_HUB_USER: ${{ secrets.DOCKER_SCOUT_HUB_USER }}
+          DOCKER_SCOUT_HUB_PASSWORD: ${{ secrets.DOCKER_SCOUT_TOKEN }}
 
       - name: Push Docker image with commit SHA
         run: |

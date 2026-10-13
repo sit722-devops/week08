@@ -8,6 +8,7 @@ on:
       - completed
     branches:
       - main
+      - feature/continuous-deployment
 
 jobs:
   deploy-staging:
